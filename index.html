@@ -128,7 +128,6 @@
             );
         };
 
-        // Utility helper to parse DD/MM/YYYY string to Javascript Date object
         const parseDateStr = (dateStr) => {
             if (!dateStr) return new Date(0);
             const parts = dateStr.split('/');
@@ -166,6 +165,7 @@
             const [studyLogs, setStudyLogs] = useState([]);
             const [completedTasks, setCompletedTasks] = useState({});
             const [stopPoints, setStopPoints] = useState({});
+            const [dayProfiles, setDayProfiles] = useState({}); // NOVO: Armazena o perfil escolhido para cada dia
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             const [isSubmitting, setIsSubmitting] = useState(false);
@@ -174,9 +174,11 @@
             const [activeTab, setActiveTab] = useState('hoje');
             const [dashSubTab, setDashSubTab] = useState('dias');
             
-            // INTERACTIVE DASHBOARD STATES
-            const [questionsFilter, setQuestionsFilter] = useState('7'); // '7', '15', '30', 'custom'
+            const [questionsFilter, setQuestionsFilter] = useState('7');
             const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
+            
+            const [timerSeconds, setTimerSeconds] = useState(0);
+            const [isTimerRunning, setIsTimerRunning] = useState(false);
 
             const [showLogModal, setShowLogModal] = useState(false);
             const [activeTaskForLog, setActiveTaskForLog] = useState(null);
@@ -221,6 +223,7 @@
                         const data = docSnap.data();
                         if (data.completedTasks) setCompletedTasks(data.completedTasks);
                         if (data.stopPoints) setStopPoints(data.stopPoints);
+                        if (data.dayProfiles) setDayProfiles(data.dayProfiles);
                         if (data.currentDayNumber) setCurrentDayNumber(data.currentDayNumber);
                     }
                 }, (err) => {
@@ -237,13 +240,9 @@
                 if (!window.fb) return;
                 setAuthLoading(true);
                 setAuthError('');
-                
                 try {
-                    if (isLoginMode) {
-                        await window.fb.signInWithEmailAndPassword(window.fb.auth, email, password);
-                    } else {
-                        await window.fb.createUserWithEmailAndPassword(window.fb.auth, email, password);
-                    }
+                    if (isLoginMode) await window.fb.signInWithEmailAndPassword(window.fb.auth, email, password);
+                    else await window.fb.createUserWithEmailAndPassword(window.fb.auth, email, password);
                 } catch (err) {
                     console.error("Erro de Autenticação:", err);
                     switch (err.code) {
@@ -255,39 +254,27 @@
                         case 'auth/invalid-email': setAuthError('Formato de e-mail inválido.'); break;
                         default: setAuthError('Ocorreu um erro. Verifique os dados e tente novamente.'); break;
                     }
-                } finally {
-                    setAuthLoading(false);
-                }
+                } finally { setAuthLoading(false); }
             };
 
             const handleGoogleAuth = async () => {
                 if (!window.fb) return;
                 setAuthLoading(true);
                 setAuthError('');
-                
                 try {
                     const provider = new window.fb.GoogleAuthProvider();
                     await window.fb.signInWithPopup(window.fb.auth, provider);
                 } catch (err) {
                     console.error("Erro de Autenticação Google:", err);
-                    if (err.code === 'auth/popup-closed-by-user') {
-                        setAuthError('O login com Google foi cancelado.');
-                    } else if (err.code === 'auth/unauthorized-domain') {
-                        setAuthError('Domínio não autorizado. Adicione este site no Firebase (Authorized Domains).');
-                    } else {
-                        setAuthError('Ocorreu um erro ao entrar com o Google.');
-                    }
-                } finally {
-                    setAuthLoading(false);
-                }
+                    if (err.code === 'auth/popup-closed-by-user') setAuthError('O login com Google foi cancelado.');
+                    else if (err.code === 'auth/unauthorized-domain') setAuthError('Domínio não autorizado. Adicione este site no Firebase (Authorized Domains).');
+                    else setAuthError('Ocorreu um erro ao entrar com o Google.');
+                } finally { setAuthLoading(false); }
             };
 
             const handleLogout = () => {
                 if (window.fb) window.fb.signOut(window.fb.auth);
-                setStudyLogs([]);
-                setCompletedTasks({});
-                setStopPoints({});
-                setCurrentDayNumber(1);
+                setStudyLogs([]); setCompletedTasks({}); setStopPoints({}); setDayProfiles({}); setCurrentDayNumber(1);
             };
 
             const withTimeout = (promise, ms, errorMessage) => {
@@ -298,27 +285,19 @@
                 return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
             };
 
-            const updateCloudState = async (newCompleted, newStops, dayNum) => {
+            const updateCloudState = async (updatesPayload) => {
                 if (!user || !window.fb) return;
                 const metaRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'userMeta', 'state');
                 try {
-                    const updates = {};
-                    if (newCompleted) updates.completedTasks = newCompleted;
-                    if (newStops) updates.stopPoints = newStops;
-                    if (dayNum) updates.currentDayNumber = dayNum;
-
                     await withTimeout(
-                        window.fb.setDoc(metaRef, updates, { merge: true }),
+                        window.fb.setDoc(metaRef, updatesPayload, { merge: true }),
                         8000,
                         "Timeout ao guardar o estado."
                     );
                 } catch (e) {
                     console.error("Erro ao salvar estado:", e);
-                    if (e.message.includes('permission') || e.code === 'permission-denied') {
-                        setError("firestore/permission-denied");
-                    } else {
-                        alert("Aviso: Falha na gravação do estado. " + e.message);
-                    }
+                    if (e.message.includes('permission') || e.code === 'permission-denied') setError("firestore/permission-denied");
+                    else alert("Aviso: Falha na gravação do estado. " + e.message);
                 }
             };
 
@@ -334,62 +313,67 @@
                 return `${h}:${m}:${sec}`;
             };
 
-            const scheduleCycleBase = [
-                { day: 1, type: "Folga", tasks: [
-                    { id: "ma", title: "Português", cat: "Estudo", materia: "Português" },
-                    { id: "mb", title: "Conhecimentos Bancários", cat: "Estudo", materia: "Conhecimentos Bancários" }
-                ], tips: "FGV Português: Foco total na intenção comunicativa do autor." },
-                { day: 2, type: "Trabalho", tasks: [
-                    { id: "mc", title: "Matemática", cat: "Estudo", materia: "Matemática" }
-                ], tips: "Matemática FGV: A banca adora lógica de 'verdade e mentira'." },
-                { day: 3, type: "Folga", tasks: [
-                    { id: "md", title: "Vendas e Negociação", cat: "Estudo", materia: "Vendas e Negociação" },
-                    { id: "me", title: "Informática", cat: "Estudo", materia: "Informática" }
-                ], tips: "Informática: Revise segurança do Windows e ferramentas Office." },
-                { day: 4, type: "Trabalho", tasks: [
-                    { id: "mf", title: "Inglês", cat: "Estudo", materia: "Inglês" }
-                ], tips: "Inglês: Identifique 'false friends' comuns na FGV." },
-                { day: 5, type: "Folga", tasks: [
-                    { id: "ma_av", title: "Português (Avanço)", cat: "Avanço", materia: "Português" },
-                    { id: "mb_av", title: "Conhecimentos Bancários (Avanço)", cat: "Avanço", materia: "Conhecimentos Bancários" }
-                ], tips: "Bancários: Atenção ao PIX e novidades do Open Finance." },
-                { day: 6, type: "Trabalho", tasks: [
-                    { id: "mc_av", title: "Matemática (Avanço)", cat: "Avanço", materia: "Matemática" }
-                ], tips: "Matemática: Pratique probabilidade básica." },
-                { day: 7, type: "Livre", tasks: [
-                    { id: "sim", title: "Simulado Completo", cat: "Avaliação", materia: "Simulados" },
-                    { id: "red", title: "Redação", cat: "Avaliação", materia: "Redação" }
-                ], tips: "Redação: Estruture o texto em 4 parágrafos claros." }
-            ];
+            // NOVO: TRILHAS DE PROGRESSÃO (Substitui o array rígido)
+            const studyPools = {
+                folga: [
+                    { type: "Folga", idProg: 1, hours: 6, tasks: [{ id: "ma", title: "Português", cat: "Estudo", materia: "Português" }, { id: "mb", title: "Conhecimentos Bancários", cat: "Estudo", materia: "Conhecimentos Bancários" }], tips: "Foco total na intenção comunicativa do autor na FGV." },
+                    { type: "Folga", idProg: 2, hours: 6, tasks: [{ id: "md", title: "Vendas e Negociação", cat: "Estudo", materia: "Vendas e Negociação" }, { id: "me", title: "Informática", cat: "Estudo", materia: "Informática" }], tips: "Informática: Revise atalhos e ferramentas Office." },
+                    { type: "Folga", idProg: 3, hours: 6, tasks: [{ id: "ma_av", title: "Português (Avanço)", cat: "Avanço", materia: "Português" }, { id: "mb_av", title: "Conhec. Bancários (Avanço)", cat: "Avanço", materia: "Conhecimentos Bancários" }], tips: "Bancários: Muita atenção às atualizações do Open Finance." }
+                ],
+                trabalho: [
+                    { type: "Trabalho", idProg: 1, hours: 3, tasks: [{ id: "mc", title: "Matemática", cat: "Estudo", materia: "Matemática" }], tips: "Matemática FGV: A banca adora lógica de 'verdade e mentira'." },
+                    { type: "Trabalho", idProg: 2, hours: 3, tasks: [{ id: "mf", title: "Inglês", cat: "Estudo", materia: "Inglês" }], tips: "Inglês: Identifique 'false friends' e conjunções." },
+                    { type: "Trabalho", idProg: 3, hours: 3, tasks: [{ id: "mc_av", title: "Matemática (Avanço)", cat: "Avanço", materia: "Matemática" }], tips: "Matemática: Foque em probabilidade e arranjos." }
+                ],
+                livre: [
+                    { type: "Livre", idProg: 1, hours: 4, tasks: [{ id: "sim", title: "Simulado Completo", cat: "Avaliação", materia: "Simulados" }, { id: "red", title: "Redação", cat: "Avaliação", materia: "Redação" }], tips: "Redação: Estruture o texto claramente em 4 parágrafos." }
+                ]
+            };
 
-            const currentDayTasks = useMemo(() => {
-                const cycleIdx = (currentDayNumber - 1) % 7;
-                const baseTasks = scheduleCycleBase[cycleIdx].tasks;
-                const reviews = [];
+            // Cálculo das Tarefas Dinâmicas para o Dia Atual
+            const { currentDayTasks, currentDayMeta } = useMemo(() => {
+                let baseTasks = [];
+                let meta = { type: "Aguardando Perfil...", hours: 0, tips: "Selecione o seu perfil de disponibilidade para iniciar as missões deste dia." };
+                const profileToday = dayProfiles[currentDayNumber];
 
-                const gaps = [1, 7, 15, 30];
-                gaps.forEach(gap => {
-                    const targetDay = currentDayNumber - gap;
-                    if (targetDay > 0) {
-                        const subjectsOnTarget = studyLogs
-                            .filter(log => log.recordedDay === targetDay && log.tipoEstudo === 'teoria')
-                            .map(log => log.materia);
-                        
-                        [...new Set(subjectsOnTarget)].forEach(sub => {
-                            reviews.push({
-                                id: `rev-${gap}-${sub.toLowerCase()}`,
-                                title: `Revisão ${gap} Dias: ${sub}`,
-                                cat: "Revisão",
-                                materia: sub
-                            });
-                        });
+                if (profileToday && studyPools[profileToday]) {
+                    // Descobrir quantos dias *deste perfil* já ocorreram antes do dia atual
+                    let pastCount = 0;
+                    for (let i = 1; i < currentDayNumber; i++) {
+                        if (dayProfiles[i] === profileToday) pastCount++;
                     }
-                });
+                    
+                    const pool = studyPools[profileToday];
+                    meta = pool[pastCount % pool.length];
+                    baseTasks = meta.tasks;
+                }
 
-                return [...reviews, ...baseTasks];
-            }, [currentDayNumber, studyLogs]);
+                // Cálculo SRS (Spaced Repetition System) - Funciona independentemente do perfil
+                const reviews = [];
+                if (profileToday) {
+                    const gaps = [1, 7, 15, 30];
+                    gaps.forEach(gap => {
+                        const targetDay = currentDayNumber - gap;
+                        if (targetDay > 0) {
+                            // Procura o que foi estudado como "teoria" no dia alvo
+                            const subjectsOnTarget = studyLogs
+                                .filter(log => log.recordedDay === targetDay && log.tipoEstudo === 'teoria')
+                                .map(log => log.materia);
+                            
+                            [...new Set(subjectsOnTarget)].forEach(sub => {
+                                reviews.push({
+                                    id: `rev-${gap}-${sub.toLowerCase()}`,
+                                    title: `Revisão ${gap} Dias: ${sub}`,
+                                    cat: "Revisão",
+                                    materia: sub
+                                });
+                            });
+                        }
+                    });
+                }
 
-            const currentDayMeta = scheduleCycleBase[(currentDayNumber - 1) % 7];
+                return { currentDayTasks: [...reviews, ...baseTasks], currentDayMeta: meta };
+            }, [currentDayNumber, studyLogs, dayProfiles]);
 
             const metrics = useMemo(() => {
                 const logsByMateria = studyLogs.reduce((acc, log) => {
@@ -424,18 +408,15 @@
                 let startDate = new Date();
                 startDate.setHours(0, 0, 0, 0);
 
-                if (questionsFilter === '7') {
-                    startDate.setDate(now.getDate() - 7);
-                } else if (questionsFilter === '15') {
-                    startDate.setDate(now.getDate() - 15);
-                } else if (questionsFilter === '30') {
-                    startDate.setDate(now.getDate() - 30);
-                } else if (questionsFilter === 'custom') {
+                if (questionsFilter === '7') startDate.setDate(now.getDate() - 7);
+                else if (questionsFilter === '15') startDate.setDate(now.getDate() - 15);
+                else if (questionsFilter === '30') startDate.setDate(now.getDate() - 30);
+                else if (questionsFilter === 'custom') {
                     if (customDateRange.start) {
                         const [y, m, d] = customDateRange.start.split('-');
                         startDate = new Date(y, m - 1, d, 0, 0, 0, 0);
                     } else {
-                        startDate = new Date(0); // Pega tudo se não definir início
+                        startDate = new Date(0); 
                     }
                     if (customDateRange.end) {
                         const [y, m, d] = customDateRange.end.split('-');
@@ -476,6 +457,19 @@
             }, [studyLogs]);
             const maxHours = Math.max(...last7DaysHours.map(d => d.hours), 0.5);
 
+            useEffect(() => {
+                let interval = null;
+                if (isTimerRunning) interval = setInterval(() => setTimerSeconds(s => s + 1), 1000);
+                else clearInterval(interval);
+                return () => clearInterval(interval);
+            }, [isTimerRunning]);
+
+            const selectDayProfile = (profile) => {
+                const newProfiles = { ...dayProfiles, [currentDayNumber]: profile };
+                setDayProfiles(newProfiles);
+                updateCloudState({ dayProfiles: newProfiles });
+            };
+
             const handleToggleTask = (task) => {
                 const taskKey = `day-${currentDayNumber}-${task.id}`;
                 if (!completedTasks[taskKey]) {
@@ -489,15 +483,12 @@
                 } else {
                     const newTasks = { ...completedTasks };
                     delete newTasks[taskKey];
-                    updateCloudState(newTasks, null, null);
+                    updateCloudState({ completedTasks: newTasks });
                 }
             };
 
             const submitLog = async () => {
-                if (!user || !window.fb) {
-                    alert("Atenção: Sistema não conectado ao Firebase.");
-                    return;
-                }
+                if (!user || !window.fb) return alert("Atenção: Sistema não conectado ao Firebase.");
                 if (isSubmitting) return;
                 setIsSubmitting(true);
 
@@ -531,20 +522,16 @@
 
                     const newStops = { ...stopPoints };
                     if (logForm.tipoEstudo === 'teoria') {
-                        if (logForm.tipoTeoria === 'pdf') {
-                            newStops[activeTaskForLog.materia] = { type: 'pdf', value: `Pág. ${logForm.pdfPagina || '?'}` };
-                        } else if (logForm.tipoTeoria === 'video') {
-                            newStops[activeTaskForLog.materia] = { type: 'video', value: `Aula ${logForm.videoAula || '?'} (${pad(logForm.videoMinuto)}:${pad(logForm.videoSegundo)})` };
-                        } else {
-                            newStops[activeTaskForLog.materia] = { type: 'questoes', value: `Questão: ${logForm.questaoParada || '?'}` };
-                        }
+                        if (logForm.tipoTeoria === 'pdf') newStops[activeTaskForLog.materia] = { type: 'pdf', value: `Pág. ${logForm.pdfPagina || '?'}` };
+                        else if (logForm.tipoTeoria === 'video') newStops[activeTaskForLog.materia] = { type: 'video', value: `Aula ${logForm.videoAula || '?'} (${pad(logForm.videoMinuto)}:${pad(logForm.videoSegundo)})` };
+                        else newStops[activeTaskForLog.materia] = { type: 'questoes', value: `Questão: ${logForm.questaoParada || '?'}` };
                     }
 
                     const logsCol = window.fb.collection(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs');
                     await withTimeout(window.fb.addDoc(logsCol, logData), 8000, "Timeout ao salvar Log no Firebase.");
                     
                     const newTasks = { ...completedTasks, [activeTaskForLog.key]: true };
-                    await updateCloudState(newTasks, newStops, null);
+                    await updateCloudState({ completedTasks: newTasks, stopPoints: newStops });
                     
                     setShowLogModal(false);
 
@@ -565,10 +552,10 @@
             const changeDay = (increment) => {
                 const newDay = Math.max(1, currentDayNumber + increment);
                 setCurrentDayNumber(newDay);
-                updateCloudState(null, null, newDay);
+                updateCloudState({ currentDayNumber: newDay });
             };
 
-            // ECRÃS DE CARREGAMENTO
+            // ECRÃS DE CARREGAMENTO E LOGIN
             if (loading) return (
                 <div className="min-h-screen flex items-center justify-center bg-white dark:bg-darkbg text-blue-600 dark:text-neon p-8 transition-colors duration-500">
                     <div className="flex flex-col items-center gap-6 text-center max-w-sm">
@@ -581,7 +568,6 @@
                 </div>
             );
 
-            // ECRÃ DE LOGIN (Suporta Dark/Light Mode)
             if (!user) return (
                 <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-darkbg p-6 selection:bg-blue-200 dark:selection:bg-neon dark:selection:text-black transition-colors duration-500">
                     <div className="absolute top-4 right-4 z-50">
@@ -594,13 +580,11 @@
 
                     <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 md:p-12 w-full max-w-md shadow-2xl dark:shadow-[0_0_40px_rgba(0,255,136,0.05)] border border-slate-200 dark:border-neon/20 animate-fade-in relative overflow-hidden transition-colors duration-500">
                         <div className="absolute -top-20 -right-20 w-40 h-40 bg-blue-600/10 dark:bg-neon/10 blur-[50px] rounded-full pointer-events-none transition-colors duration-500"></div>
-                        
                         <div className="flex justify-center mb-8 relative z-10">
                             <div className="p-3 bg-blue-600 dark:bg-neon rounded-2xl shadow-lg dark:shadow-[0_0_20px_rgba(0,255,136,0.4)] text-white dark:text-black transition-colors duration-500">
                                 <Icon name="Zap" size={32} />
                             </div>
                         </div>
-                        
                         <div className="text-center mb-8 relative z-10">
                             <h1 className="text-2xl font-black italic tracking-tighter uppercase leading-none text-slate-900 dark:text-white drop-shadow-sm transition-colors duration-500">
                                 FGV <span className="text-blue-600 dark:text-neon transition-colors duration-500">Master</span>
@@ -612,73 +596,34 @@
                             <div className="space-y-4">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 mb-1 block transition-colors duration-500">E-mail</label>
-                                    <input 
-                                        type="email" 
-                                        required
-                                        className="w-full bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-900 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-xl text-sm font-bold outline-none focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-all duration-300" 
-                                        placeholder="seu@email.com" 
-                                        value={email} onChange={(e) => setEmail(e.target.value)} 
-                                    />
+                                    <input type="email" required className="w-full bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-900 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-xl text-sm font-bold outline-none focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-all duration-300" placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 mb-1 block transition-colors duration-500">Palavra-passe</label>
-                                    <input 
-                                        type="password" 
-                                        required
-                                        className="w-full bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-900 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-xl text-sm font-bold outline-none focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-all duration-300" 
-                                        placeholder="••••••" 
-                                        value={password} onChange={(e) => setPassword(e.target.value)} 
-                                    />
+                                    <input type="password" required className="w-full bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-900 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-xl text-sm font-bold outline-none focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-all duration-300" placeholder="••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
                                 </div>
                             </div>
-
                             {authError && (
                                 <div className="p-3 bg-rose-100 dark:bg-rose-500/10 border border-rose-300 dark:border-rose-500/30 rounded-xl flex items-center gap-2 text-rose-600 dark:text-rose-400 text-xs font-bold animate-fade-in transition-colors duration-500">
-                                    <Icon name="AlertCircle" size={14} className="shrink-0" />
-                                    <span>{authError}</span>
+                                    <Icon name="AlertCircle" size={14} className="shrink-0" /><span>{authError}</span>
                                 </div>
                             )}
-
-                            <button 
-                                type="submit" 
-                                disabled={authLoading}
-                                className={`w-full font-black py-4 rounded-2xl shadow-lg transition-all uppercase tracking-[0.2em] text-xs italic ${authLoading ? 'bg-slate-300 dark:bg-emerald-900 text-slate-500 dark:text-emerald-700 cursor-not-allowed' : 'bg-blue-600 dark:bg-neon text-white dark:text-black hover:bg-blue-700 dark:hover:bg-neonhover dark:hover:shadow-[0_0_20px_#00ff88] active:scale-95'}`}
-                            >
+                            <button type="submit" disabled={authLoading} className={`w-full font-black py-4 rounded-2xl shadow-lg transition-all uppercase tracking-[0.2em] text-xs italic ${authLoading ? 'bg-slate-300 dark:bg-emerald-900 text-slate-500 dark:text-emerald-700 cursor-not-allowed' : 'bg-blue-600 dark:bg-neon text-white dark:text-black hover:bg-blue-700 dark:hover:bg-neonhover dark:hover:shadow-[0_0_20px_#00ff88] active:scale-95'}`}>
                                 {authLoading ? 'A processar...' : (isLoginMode ? 'Entrar no Sistema' : 'Criar Nova Conta')}
                             </button>
 
                             <div className="relative my-6">
-                                <div className="absolute inset-0 flex items-center">
-                                    <div className="w-full border-t border-slate-200 dark:border-darkborder transition-colors duration-500"></div>
-                                </div>
-                                <div className="relative flex justify-center text-[10px]">
-                                    <span className="bg-white dark:bg-darkcard px-2 text-slate-400 dark:text-gray-500 uppercase tracking-widest font-black transition-colors duration-500">Ou</span>
-                                </div>
+                                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-darkborder transition-colors duration-500"></div></div>
+                                <div className="relative flex justify-center text-[10px]"><span className="bg-white dark:bg-darkcard px-2 text-slate-400 dark:text-gray-500 uppercase tracking-widest font-black transition-colors duration-500">Ou</span></div>
                             </div>
 
-                            <button 
-                                type="button" 
-                                onClick={handleGoogleAuth}
-                                disabled={authLoading}
-                                className={`w-full font-black py-3.5 rounded-2xl shadow-md border border-slate-200 dark:border-transparent transition-all uppercase tracking-[0.1em] text-xs flex items-center justify-center gap-3 ${authLoading ? 'bg-slate-100 dark:bg-darkinput text-slate-400 dark:text-gray-600 cursor-not-allowed' : 'bg-white dark:bg-white text-slate-700 dark:text-gray-900 hover:bg-slate-50 hover:shadow-lg dark:hover:bg-gray-200 dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] active:scale-95'}`}
-                            >
-                                <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
-                                    <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
-                                        <path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/>
-                                        <path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/>
-                                        <path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/>
-                                        <path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 41.939 C -8.804 40.009 -11.514 38.739 -14.754 38.739 C -19.444 38.739 -23.494 41.439 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/>
-                                    </g>
-                                </svg>
+                            <button type="button" onClick={handleGoogleAuth} disabled={authLoading} className={`w-full font-black py-3.5 rounded-2xl shadow-md border border-slate-200 dark:border-transparent transition-all uppercase tracking-[0.1em] text-xs flex items-center justify-center gap-3 ${authLoading ? 'bg-slate-100 dark:bg-darkinput text-slate-400 dark:text-gray-600 cursor-not-allowed' : 'bg-white dark:bg-white text-slate-700 dark:text-gray-900 hover:bg-slate-50 hover:shadow-lg dark:hover:bg-gray-200 dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] active:scale-95'}`}>
+                                <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)"><path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/><path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/><path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/><path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 41.939 C -8.804 40.009 -11.514 38.739 -14.754 38.739 C -19.444 38.739 -23.494 41.439 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/></g></svg>
                                 Entrar com Google
                             </button>
 
                             <div className="text-center mt-6">
-                                <button 
-                                    type="button" 
-                                    onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); }}
-                                    className="text-[11px] font-bold text-slate-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-neon transition-colors"
-                                >
+                                <button type="button" onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); }} className="text-[11px] font-bold text-slate-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-neon transition-colors">
                                     {isLoginMode ? 'Não tem conta? Crie uma agora.' : 'Já tem conta? Faça login aqui.'}
                                 </button>
                             </div>
@@ -746,206 +691,247 @@
                     <main className="max-w-6xl mx-auto p-4 md:p-8 flex-1 w-full animate-fade-in">
                         {activeTab === 'hoje' && (
                             <div className="space-y-8">
-                                {/* LINHA 1: Tarefas do Dia + Novo Dashboard de Questões */}
-                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                    <div className="lg:col-span-2 space-y-6">
-                                        <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
-                                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[60px] rounded-full pointer-events-none transition-colors duration-500"></div>
+                                
+                                {/* SELETOR DE PERFIL DE DISPONIBILIDADE SE NÃO DEFINIDO */}
+                                {!dayProfiles[currentDayNumber] ? (
+                                    <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 md:p-12 shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 text-center animate-fade-in">
+                                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/5 dark:bg-neon/10 blur-[80px] rounded-full pointer-events-none transition-colors duration-500"></div>
+                                        <div className="relative z-10">
+                                            <Icon name="Calendar" size={48} className="mx-auto mb-6 text-blue-500 dark:text-neon drop-shadow-[0_0_10px_rgba(0,255,136,0.3)] transition-colors duration-500" />
+                                            <h2 className="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tighter italic drop-shadow-sm mb-2 transition-colors duration-500">Como é a sua disponibilidade hoje?</h2>
+                                            <p className="text-sm font-bold text-slate-500 dark:text-gray-400 uppercase tracking-widest mb-10 transition-colors duration-500">Dia {currentDayNumber} • Escolha o seu ritmo</p>
                                             
-                                            <div className="flex items-center justify-between mb-8 relative z-10">
-                                                <div>
-                                                    <h2 className="text-4xl font-black text-slate-800 dark:text-white tracking-tighter italic drop-shadow-sm transition-colors duration-500">Dia {currentDayNumber}</h2>
-                                                    <p className="text-sm font-bold text-blue-600 dark:text-neon uppercase tracking-widest mt-1 transition-colors duration-500">{currentDayMeta.type}</p>
-                                                </div>
-                                                <div className="flex gap-3">
-                                                    <button onClick={() => changeDay(-1)} className="p-3 bg-slate-100 dark:bg-[#111] text-slate-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-neon hover:bg-slate-200 dark:hover:bg-darkbg rounded-2xl active:scale-95 transition-all border border-slate-200 dark:border-darkborder"><Icon name="ChevronLeft"/></button>
-                                                    <button onClick={() => changeDay(1)} className="p-3 bg-slate-100 dark:bg-[#111] text-slate-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-neon hover:bg-slate-200 dark:hover:bg-darkbg rounded-2xl active:scale-95 transition-all border border-slate-200 dark:border-darkborder"><Icon name="ChevronRight"/></button>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+                                                <button onClick={() => selectDayProfile('folga')} className="group flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-darkbg border-2 border-slate-200 dark:border-darkborder hover:border-blue-500 dark:hover:border-neon rounded-[2rem] transition-all duration-300 hover:shadow-xl dark:hover:shadow-[0_0_20px_rgba(0,255,136,0.15)] hover:-translate-y-2">
+                                                    <div className="w-16 h-16 bg-blue-100 dark:bg-neon/20 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                                                        <Icon name="Coffee" size={28} className="text-blue-600 dark:text-neon" />
+                                                    </div>
+                                                    <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-neon transition-colors duration-300">Folga (6h)</h3>
+                                                    <p className="text-xs text-slate-500 dark:text-gray-400 font-medium px-4">Sessão intensa de teoria longa e avanços estratégicos.</p>
+                                                </button>
+                                                
+                                                <button onClick={() => selectDayProfile('trabalho')} className="group flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-darkbg border-2 border-slate-200 dark:border-darkborder hover:border-amber-500 dark:hover:border-amber-400 rounded-[2rem] transition-all duration-300 hover:shadow-xl dark:hover:shadow-[0_0_20px_rgba(251,191,36,0.15)] hover:-translate-y-2">
+                                                    <div className="w-16 h-16 bg-amber-100 dark:bg-amber-500/20 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                                                        <Icon name="Briefcase" size={28} className="text-amber-600 dark:text-amber-400" />
+                                                    </div>
+                                                    <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white mb-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors duration-300">Trabalho (3h)</h3>
+                                                    <p className="text-xs text-slate-500 dark:text-gray-400 font-medium px-4">Sessão focada, blocos curtos e revisões dinâmicas.</p>
+                                                </button>
+                                                
+                                                <button onClick={() => selectDayProfile('livre')} className="group flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-darkbg border-2 border-slate-200 dark:border-darkborder hover:border-purple-500 dark:hover:border-purple-400 rounded-[2rem] transition-all duration-300 hover:shadow-xl dark:hover:shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:-translate-y-2">
+                                                    <div className="w-16 h-16 bg-purple-100 dark:bg-purple-500/20 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                                                        <Icon name="Target" size={28} className="text-purple-600 dark:text-purple-400" />
+                                                    </div>
+                                                    <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white mb-2 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors duration-300">Livre / Simulado</h3>
+                                                    <p className="text-xs text-slate-500 dark:text-gray-400 font-medium px-4">Dia focado em avaliação, simulados e redação.</p>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* LINHA 1: Tarefas do Dia + Novo Dashboard de Questões */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                            <div className="lg:col-span-2 space-y-6">
+                                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
+                                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[60px] rounded-full pointer-events-none transition-colors duration-500"></div>
+                                                    
+                                                    <div className="flex items-center justify-between mb-8 relative z-10">
+                                                        <div>
+                                                            <h2 className="text-4xl font-black text-slate-800 dark:text-white tracking-tighter italic drop-shadow-sm transition-colors duration-500">Dia {currentDayNumber}</h2>
+                                                            <p className="text-sm font-bold text-blue-600 dark:text-neon uppercase tracking-widest mt-1 transition-colors duration-500">Perfil: {currentDayMeta.type} • {currentDayMeta.hours}h</p>
+                                                        </div>
+                                                        <div className="flex gap-3">
+                                                            <button onClick={() => changeDay(-1)} className="p-3 bg-slate-100 dark:bg-[#111] text-slate-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-neon hover:bg-slate-200 dark:hover:bg-darkbg rounded-2xl active:scale-95 transition-all border border-slate-200 dark:border-darkborder"><Icon name="ChevronLeft"/></button>
+                                                            <button onClick={() => changeDay(1)} className="p-3 bg-slate-100 dark:bg-[#111] text-slate-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-neon hover:bg-slate-200 dark:hover:bg-darkbg rounded-2xl active:scale-95 transition-all border border-slate-200 dark:border-darkborder"><Icon name="ChevronRight"/></button>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="space-y-4 relative z-10 flex-1">
+                                                        {currentDayTasks.map((task, idx) => {
+                                                            const tKey = `day-${currentDayNumber}-${task.id}`;
+                                                            const lastStop = stopPoints[task.materia];
+                                                            const isDone = completedTasks[tKey];
+                                                            return (
+                                                                <div key={`${tKey}-${idx}`} onClick={() => handleToggleTask(task)} className={`group flex items-center gap-5 p-5 rounded-[2rem] border transition-all cursor-pointer ${isDone ? 'bg-blue-50/50 dark:bg-neon/10 border-blue-200 dark:border-neon/30' : 'bg-slate-50 dark:bg-darkbg border-slate-200 dark:border-darkborder hover:border-blue-400 dark:hover:border-neon/50 shadow-sm dark:shadow-md'}`}>
+                                                                    <div className={`p-3 rounded-2xl transition-all ${isDone ? 'bg-blue-600 dark:bg-neon text-white dark:text-black shadow-md dark:shadow-[0_0_15px_rgba(0,255,136,0.4)]' : 'bg-slate-200 dark:bg-[#111] text-slate-400 dark:text-gray-500 group-hover:text-blue-600 dark:group-hover:text-neon group-hover:bg-blue-100 dark:group-hover:bg-darkcard'}`}>
+                                                                        <Icon name={isDone ? "Check" : "Circle"} size={24} />
+                                                                    </div>
+                                                                    <div className="flex-1">
+                                                                        <p className={`font-black text-lg transition-all ${isDone ? 'line-through text-slate-400 dark:text-gray-500' : 'text-slate-800 dark:text-gray-100 uppercase italic'}`}>{task.title}</p>
+                                                                        <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                                                                            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${task.cat === 'Revisão' ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20' : 'bg-slate-200 dark:bg-[#111] text-slate-500 dark:text-gray-400'}`}>{task.cat}</span>
+                                                                            {lastStop && !isDone && (
+                                                                                <div className="flex items-center gap-1.5 px-3 py-0.5 bg-blue-100 dark:bg-neon/20 border border-blue-300 dark:border-neon/30 rounded-full transition-colors duration-500">
+                                                                                    <span className="w-1.5 h-1.5 bg-blue-500 dark:bg-neon rounded-full animate-pulse shadow-[0_0_5px_#3b82f6] dark:shadow-[0_0_5px_#00ff88]"></span>
+                                                                                    <span className="text-[9px] font-black text-blue-700 dark:text-neon uppercase tracking-widest transition-colors duration-500">Parou em: {lastStop.value}</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                        {currentDayTasks.length === 0 && <p className="text-slate-500 dark:text-gray-500 text-center italic py-4">Sem tarefas calculadas para hoje.</p>}
+                                                    </div>
                                                 </div>
                                             </div>
                                             
-                                            <div className="space-y-4 relative z-10 flex-1">
-                                                {currentDayTasks.map((task, idx) => {
-                                                    const tKey = `day-${currentDayNumber}-${task.id}`;
-                                                    const lastStop = stopPoints[task.materia];
-                                                    const isDone = completedTasks[tKey];
-                                                    return (
-                                                        <div key={`${tKey}-${idx}`} onClick={() => handleToggleTask(task)} className={`group flex items-center gap-5 p-5 rounded-[2rem] border transition-all cursor-pointer ${isDone ? 'bg-blue-50/50 dark:bg-neon/10 border-blue-200 dark:border-neon/30' : 'bg-slate-50 dark:bg-darkbg border-slate-200 dark:border-darkborder hover:border-blue-400 dark:hover:border-neon/50 shadow-sm dark:shadow-md'}`}>
-                                                            <div className={`p-3 rounded-2xl transition-all ${isDone ? 'bg-blue-600 dark:bg-neon text-white dark:text-black shadow-md dark:shadow-[0_0_15px_rgba(0,255,136,0.4)]' : 'bg-slate-200 dark:bg-[#111] text-slate-400 dark:text-gray-500 group-hover:text-blue-600 dark:group-hover:text-neon group-hover:bg-blue-100 dark:group-hover:bg-darkcard'}`}>
-                                                                <Icon name={isDone ? "Check" : "Circle"} size={24} />
+                                            {/* DASHBOARD INTERATIVO DE QUESTÕES */}
+                                            <div className="space-y-6">
+                                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
+                                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[50px] rounded-full pointer-events-none transition-colors duration-500"></div>
+                                                    
+                                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 relative z-10">
+                                                        <Icon name="Target" size={16} /> Resolução de Questões
+                                                    </h3>
+
+                                                    <div className="flex flex-wrap gap-2 mb-6 relative z-10">
+                                                        {['7', '15', '30', 'custom'].map(f => (
+                                                            <button
+                                                                key={f}
+                                                                onClick={() => setQuestionsFilter(f)}
+                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border ${questionsFilter === f ? 'bg-blue-600 border-blue-600 text-white dark:bg-neon dark:border-neon dark:text-black shadow-md' : 'bg-slate-50 border-slate-200 dark:bg-darkinput dark:border-darkborder text-slate-500 dark:text-gray-400 hover:border-blue-300 dark:hover:border-neon/50 hover:text-blue-600 dark:hover:text-neon'}`}
+                                                            >
+                                                                {f === 'custom' ? 'Personalizado' : `${f} Dias`}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+
+                                                    {questionsFilter === 'custom' && (
+                                                        <div className="flex gap-2 mb-6 relative z-10 animate-fade-in">
+                                                            <input 
+                                                                type="date" 
+                                                                value={customDateRange.start} 
+                                                                onChange={e => setCustomDateRange({...customDateRange, start: e.target.value})} 
+                                                                className="flex-1 bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
+                                                                title="Data de Início"
+                                                            />
+                                                            <input 
+                                                                type="date" 
+                                                                value={customDateRange.end} 
+                                                                onChange={e => setCustomDateRange({...customDateRange, end: e.target.value})} 
+                                                                className="flex-1 bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
+                                                                title="Data Final"
+                                                            />
+                                                        </div>
+                                                    )}
+
+                                                    <div className="flex-1 flex flex-col justify-center relative z-10">
+                                                        <div className="text-center mb-6">
+                                                            <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-1 transition-colors">Questões Resolvidas</p>
+                                                            <h3 className="text-6xl font-black text-slate-800 dark:text-white tracking-tighter italic drop-shadow-sm transition-colors">{filteredQuestionsData.total}</h3>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-2 gap-4 mb-8">
+                                                            <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/20 p-4 rounded-2xl text-center transition-colors">
+                                                                <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400">{filteredQuestionsData.totalAcertos}</p>
+                                                                <p className="text-[9px] font-black text-emerald-600/70 dark:text-emerald-500/70 uppercase tracking-widest mt-1">Acertos</p>
                                                             </div>
-                                                            <div className="flex-1">
-                                                                <p className={`font-black text-lg transition-all ${isDone ? 'line-through text-slate-400 dark:text-gray-500' : 'text-slate-800 dark:text-gray-100 uppercase italic'}`}>{task.title}</p>
-                                                                <div className="flex flex-wrap items-center gap-3 mt-1.5">
-                                                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${task.cat === 'Revisão' ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20' : 'bg-slate-200 dark:bg-[#111] text-slate-500 dark:text-gray-400'}`}>{task.cat}</span>
-                                                                    {lastStop && !isDone && (
-                                                                        <div className="flex items-center gap-1.5 px-3 py-0.5 bg-blue-100 dark:bg-neon/20 border border-blue-300 dark:border-neon/30 rounded-full transition-colors duration-500">
-                                                                            <span className="w-1.5 h-1.5 bg-blue-500 dark:bg-neon rounded-full animate-pulse shadow-[0_0_5px_#3b82f6] dark:shadow-[0_0_5px_#00ff88]"></span>
-                                                                            <span className="text-[9px] font-black text-blue-700 dark:text-neon uppercase tracking-widest transition-colors duration-500">Parou em: {lastStop.value}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
+                                                            <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-500/20 p-4 rounded-2xl text-center transition-colors">
+                                                                <p className="text-3xl font-black text-rose-600 dark:text-rose-400">{filteredQuestionsData.totalErros}</p>
+                                                                <p className="text-[9px] font-black text-rose-600/70 dark:text-rose-500/70 uppercase tracking-widest mt-1">Erros</p>
                                                             </div>
                                                         </div>
-                                                    );
-                                                })}
-                                                {currentDayTasks.length === 0 && <p className="text-slate-500 dark:text-gray-500 text-center italic py-4">Sem tarefas para hoje.</p>}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* NOVO DASHBOARD INTERATIVO DE QUESTÕES */}
-                                    <div className="space-y-6">
-                                        <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
-                                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[50px] rounded-full pointer-events-none transition-colors duration-500"></div>
-                                            
-                                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 relative z-10">
-                                                <Icon name="Target" size={16} /> Resolução de Questões
-                                            </h3>
 
-                                            <div className="flex flex-wrap gap-2 mb-6 relative z-10">
-                                                {['7', '15', '30', 'custom'].map(f => (
-                                                    <button
-                                                        key={f}
-                                                        onClick={() => setQuestionsFilter(f)}
-                                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border ${questionsFilter === f ? 'bg-blue-600 border-blue-600 text-white dark:bg-neon dark:border-neon dark:text-black shadow-md' : 'bg-slate-50 border-slate-200 dark:bg-darkinput dark:border-darkborder text-slate-500 dark:text-gray-400 hover:border-blue-300 dark:hover:border-neon/50 hover:text-blue-600 dark:hover:text-neon'}`}
-                                                    >
-                                                        {f === 'custom' ? 'Personalizado' : `${f} Dias`}
-                                                    </button>
-                                                ))}
-                                            </div>
-
-                                            {questionsFilter === 'custom' && (
-                                                <div className="flex gap-2 mb-6 relative z-10 animate-fade-in">
-                                                    <input 
-                                                        type="date" 
-                                                        value={customDateRange.start} 
-                                                        onChange={e => setCustomDateRange({...customDateRange, start: e.target.value})} 
-                                                        className="flex-1 bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
-                                                        title="Data de Início"
-                                                    />
-                                                    <input 
-                                                        type="date" 
-                                                        value={customDateRange.end} 
-                                                        onChange={e => setCustomDateRange({...customDateRange, end: e.target.value})} 
-                                                        className="flex-1 bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
-                                                        title="Data Final"
-                                                    />
-                                                </div>
-                                            )}
-
-                                            <div className="flex-1 flex flex-col justify-center relative z-10">
-                                                <div className="text-center mb-6">
-                                                    <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-1 transition-colors">Questões Resolvidas</p>
-                                                    <h3 className="text-6xl font-black text-slate-800 dark:text-white tracking-tighter italic drop-shadow-sm transition-colors">{filteredQuestionsData.total}</h3>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 gap-4 mb-8">
-                                                    <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/20 p-4 rounded-2xl text-center transition-colors">
-                                                        <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400">{filteredQuestionsData.totalAcertos}</p>
-                                                        <p className="text-[9px] font-black text-emerald-600/70 dark:text-emerald-500/70 uppercase tracking-widest mt-1">Acertos</p>
+                                                        <div className="w-full bg-rose-100 dark:bg-rose-950 h-4 rounded-full overflow-hidden border border-rose-200 dark:border-rose-900/50 flex relative transition-colors">
+                                                            <div className="bg-emerald-500 dark:bg-neon h-full shadow-sm dark:shadow-[0_0_10px_#10b981] transition-all duration-700 ease-out" style={{width: `${filteredQuestionsData.perc}%`}}></div>
+                                                            <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-slate-900 dark:text-white mix-blend-difference tracking-widest">{filteredQuestionsData.perc}% Precisão</span>
+                                                        </div>
                                                     </div>
-                                                    <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-500/20 p-4 rounded-2xl text-center transition-colors">
-                                                        <p className="text-3xl font-black text-rose-600 dark:text-rose-400">{filteredQuestionsData.totalErros}</p>
-                                                        <p className="text-[9px] font-black text-rose-600/70 dark:text-rose-500/70 uppercase tracking-widest mt-1">Erros</p>
-                                                    </div>
-                                                </div>
-
-                                                <div className="w-full bg-rose-100 dark:bg-rose-950 h-4 rounded-full overflow-hidden border border-rose-200 dark:border-rose-900/50 flex relative transition-colors">
-                                                    <div className="bg-emerald-500 dark:bg-neon h-full shadow-sm dark:shadow-[0_0_10px_#10b981] transition-all duration-700 ease-out" style={{width: `${filteredQuestionsData.perc}%`}}></div>
-                                                    <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-slate-900 dark:text-white mix-blend-difference tracking-widest">{filteredQuestionsData.perc}% Precisão</span>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                </div>
 
-                                {/* LINHA 2: Matriz de Dias (Expandida) + Gráfico de Horas */}
-                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                    {/* Matriz Expandida Ocupando 2 Colunas */}
-                                    <div className="lg:col-span-2 space-y-6">
-                                        <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
-                                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/5 dark:bg-neon/5 blur-[80px] rounded-full pointer-events-none transition-colors duration-500"></div>
-                                            <div className="relative z-10 flex-1 flex flex-col">
-                                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
-                                                    <Icon name="Calendar" size={16} /> Matriz de Dias Contínuos
-                                                </h3>
-                                                
-                                                <div className="w-full overflow-x-auto pb-2 git-scroll flex-1 flex items-center">
-                                                    <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 sm:gap-2 bg-slate-50 dark:bg-darkbg p-5 rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500 mx-auto">
-                                                        {Array.from({length: Math.max(126, Math.ceil(currentDayNumber / 7) * 7)}).map((_, i) => {
-                                                            const dayNum = i + 1;
-                                                            const seconds = metrics.intensityMap[dayNum] || 0;
-                                                            
-                                                            let colorClass = isDarkMode ? "bg-[#111] border-[#222]" : "bg-slate-200 border-slate-300"; 
-                                                            if (seconds > 0 && seconds < 3600) colorClass = isDarkMode ? "bg-[#00ff88]/20 border-[#00ff88]/30" : "bg-blue-300 border-blue-400"; 
-                                                            else if (seconds >= 3600 && seconds < 10800) colorClass = isDarkMode ? "bg-[#00ff88]/50 border-[#00ff88]/60" : "bg-blue-500 border-blue-600"; 
-                                                            else if (seconds >= 10800 && seconds < 21600) colorClass = isDarkMode ? "bg-[#00ff88]/80 border-[#00ff88]/90" : "bg-blue-700 border-blue-800"; 
-                                                            else if (seconds >= 21600) colorClass = isDarkMode ? "bg-neon shadow-[0_0_10px_#00ff88] border-[#00ff88] z-10 relative" : "bg-blue-900 shadow-md border-blue-950 z-10 relative"; 
-                                                            
-                                                            const isCurrent = dayNum === currentDayNumber;
-                                                            if (isCurrent && seconds === 0) colorClass = isDarkMode ? "bg-[#111] ring-1 ring-neon ring-offset-1 ring-offset-darkbg z-10 relative" : "bg-white ring-1 ring-blue-600 ring-offset-1 ring-offset-slate-50 z-10 relative";
+                                        {/* LINHA 2: Matriz de Dias (Expandida) + Gráfico de Horas */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                            {/* Matriz Expandida Ocupando 2 Colunas */}
+                                            <div className="lg:col-span-2 space-y-6">
+                                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
+                                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/5 dark:bg-neon/5 blur-[80px] rounded-full pointer-events-none transition-colors duration-500"></div>
+                                                    <div className="relative z-10 flex-1 flex flex-col">
+                                                        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
+                                                            <Icon name="Calendar" size={16} /> Matriz de Dias Contínuos
+                                                        </h3>
+                                                        
+                                                        <div className="w-full overflow-x-auto pb-2 git-scroll flex-1 flex items-center">
+                                                            <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 sm:gap-2 bg-slate-50 dark:bg-darkbg p-5 rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500 mx-auto">
+                                                                {Array.from({length: Math.max(126, Math.ceil(currentDayNumber / 7) * 7)}).map((_, i) => {
+                                                                    const dayNum = i + 1;
+                                                                    const seconds = metrics.intensityMap[dayNum] || 0;
+                                                                    
+                                                                    let colorClass = isDarkMode ? "bg-[#111] border-[#222]" : "bg-slate-200 border-slate-300"; 
+                                                                    if (seconds > 0 && seconds < 3600) colorClass = isDarkMode ? "bg-[#00ff88]/20 border-[#00ff88]/30" : "bg-blue-300 border-blue-400"; 
+                                                                    else if (seconds >= 3600 && seconds < 10800) colorClass = isDarkMode ? "bg-[#00ff88]/50 border-[#00ff88]/60" : "bg-blue-500 border-blue-600"; 
+                                                                    else if (seconds >= 10800 && seconds < 21600) colorClass = isDarkMode ? "bg-[#00ff88]/80 border-[#00ff88]/90" : "bg-blue-700 border-blue-800"; 
+                                                                    else if (seconds >= 21600) colorClass = isDarkMode ? "bg-neon shadow-[0_0_10px_#00ff88] border-[#00ff88] z-10 relative" : "bg-blue-900 shadow-md border-blue-950 z-10 relative"; 
+                                                                    
+                                                                    const isCurrent = dayNum === currentDayNumber;
+                                                                    if (isCurrent && seconds === 0) colorClass = isDarkMode ? "bg-[#111] ring-1 ring-neon ring-offset-1 ring-offset-darkbg z-10 relative" : "bg-white ring-1 ring-blue-600 ring-offset-1 ring-offset-slate-50 z-10 relative";
 
+                                                                    return (
+                                                                        <div 
+                                                                            key={i} 
+                                                                            title={`Dia ${dayNum}${seconds > 0 ? ` - ${formatTimeString(seconds)}` : ''}`}
+                                                                            className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-[3px] cursor-crosshair hover:scale-150 hover:z-20 transition-all ${colorClass}`}
+                                                                        ></div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div className="flex justify-between items-end mt-6">
+                                                            <div>
+                                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Sessões Ativas</p>
+                                                                <p className="text-3xl font-black text-blue-600 dark:text-neon leading-none mt-1 transition-colors duration-500">{metrics.diasEstudados}</p>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-darkbg p-2 rounded-xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                                <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mr-2">Nível</span>
+                                                                <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-slate-200 border-slate-300'}`}></div>
+                                                                <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-[#00ff88]/50 border-[#00ff88]/60' : 'bg-blue-500 border-blue-600'}`}></div>
+                                                                <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-neon shadow-[0_0_5px_#00ff88] border-[#00ff88]' : 'bg-blue-900 border-blue-950'}`}></div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Gráfico de Horas ao lado da Matriz */}
+                                            <div className="space-y-6">
+                                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
+                                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
+                                                        <Icon name="BarChart" size={16} /> Horas Recentes (7d)
+                                                    </h3>
+                                                    
+                                                    <div className="flex items-end justify-between flex-1 gap-2 md:gap-3 mt-2 px-1">
+                                                        {last7DaysHours.map((d, i) => {
+                                                            const height = maxHours > 0 ? (d.hours / maxHours) * 100 : 0;
                                                             return (
-                                                                <div 
-                                                                    key={i} 
-                                                                    title={`Dia ${dayNum}${seconds > 0 ? ` - ${formatTimeString(seconds)}` : ''}`}
-                                                                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-[4px] cursor-crosshair hover:scale-150 hover:z-20 transition-all ${colorClass}`}
-                                                                ></div>
+                                                                <div key={i} className="flex flex-col items-center gap-2 flex-1 group h-full justify-end">
+                                                                    <div className="w-full max-w-[28px] relative flex items-end justify-center h-32 bg-slate-50 dark:bg-darkbg rounded-t-lg transition-colors duration-500">
+                                                                        <div 
+                                                                            className="w-full bg-blue-500 dark:bg-neon rounded-t-md transition-all duration-700 ease-out group-hover:opacity-80"
+                                                                            style={{ height: `${height}%`, minHeight: d.hours > 0 ? '4px' : '0' }}
+                                                                        ></div>
+                                                                        <span className="absolute -top-6 text-[10px] font-bold text-slate-700 dark:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                            {d.hours.toFixed(1)}h
+                                                                        </span>
+                                                                    </div>
+                                                                    <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase">{d.label}</span>
+                                                                </div>
                                                             );
                                                         })}
                                                     </div>
-                                                </div>
-                                                
-                                                <div className="flex justify-between items-end mt-6">
-                                                    <div>
-                                                        <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Sessões Ativas</p>
-                                                        <p className="text-3xl font-black text-blue-600 dark:text-neon leading-none mt-1 transition-colors duration-500">{metrics.diasEstudados}</p>
-                                                    </div>
-                                                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-darkbg p-2 rounded-xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
-                                                        <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mr-2">Nível</span>
-                                                        <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-slate-200 border-slate-300'}`}></div>
-                                                        <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-[#00ff88]/50 border-[#00ff88]/60' : 'bg-blue-500 border-blue-600'}`}></div>
-                                                        <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-neon shadow-[0_0_5px_#00ff88] border-[#00ff88]' : 'bg-blue-900 border-blue-950'}`}></div>
+                                                    
+                                                    <div className="mt-8 pt-5 border-t border-slate-100 dark:border-darkborder transition-colors duration-500 flex items-center justify-between">
+                                                        <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Total Global</p>
+                                                        <p className="text-2xl font-black text-slate-800 dark:text-white transition-colors duration-500">{formatTimeString(metrics.totalSeconds)}</p>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-
-                                    {/* Gráfico de Horas ao lado da Matriz */}
-                                    <div className="space-y-6">
-                                        <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
-                                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
-                                                <Icon name="BarChart" size={16} /> Horas Recentes (7d)
-                                            </h3>
-                                            
-                                            <div className="flex items-end justify-between flex-1 gap-2 md:gap-3 mt-2 px-1">
-                                                {last7DaysHours.map((d, i) => {
-                                                    const height = maxHours > 0 ? (d.hours / maxHours) * 100 : 0;
-                                                    return (
-                                                        <div key={i} className="flex flex-col items-center gap-2 flex-1 group h-full justify-end">
-                                                            <div className="w-full max-w-[28px] relative flex items-end justify-center h-32 bg-slate-50 dark:bg-darkbg rounded-t-lg transition-colors duration-500">
-                                                                <div 
-                                                                    className="w-full bg-blue-500 dark:bg-neon rounded-t-md transition-all duration-700 ease-out group-hover:opacity-80"
-                                                                    style={{ height: `${height}%`, minHeight: d.hours > 0 ? '4px' : '0' }}
-                                                                ></div>
-                                                                <span className="absolute -top-6 text-[10px] font-bold text-slate-700 dark:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                    {d.hours.toFixed(1)}h
-                                                                </span>
-                                                            </div>
-                                                            <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase">{d.label}</span>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                            
-                                            <div className="mt-8 pt-5 border-t border-slate-100 dark:border-darkborder transition-colors duration-500 flex items-center justify-between">
-                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Total Global</p>
-                                                <p className="text-2xl font-black text-slate-800 dark:text-white transition-colors duration-500">{formatTimeString(metrics.totalSeconds)}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                                    </>
+                                )}
                             </div>
                         )}
 
@@ -1080,22 +1066,71 @@
                         
                         {activeTab === 'ciclo' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-                                {scheduleCycleBase.map(day => (
-                                    <div key={day.day} className={`p-8 rounded-[2.5rem] bg-white dark:bg-darkcard border transition-all duration-500 ${currentDayNumber % 7 === day.day % 7 ? 'border-blue-500 dark:border-neon shadow-lg dark:shadow-[0_0_20px_rgba(0,255,136,0.1)]' : 'border-slate-200 dark:border-darkborder opacity-70 hover:opacity-100 shadow-sm'}`}>
-                                        <div className="flex justify-between items-center mb-6 text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">
-                                            <span>Configuração {day.day}</span>
+                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder flex flex-col h-full transition-colors duration-500">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="p-2 bg-blue-100 dark:bg-neon/20 rounded-xl text-blue-600 dark:text-neon">
+                                            <Icon name="Coffee" size={20} />
                                         </div>
-                                        <h4 className="font-black text-slate-800 dark:text-white text-2xl italic tracking-tighter uppercase transition-colors duration-500">{day.type}</h4>
-                                        <div className="mt-8 space-y-3">
-                                            {day.tasks.map(t => (
-                                                <div key={t.id} className="flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-gray-400 border-b border-slate-100 dark:border-darkborder pb-3 transition-colors duration-500">
-                                                    <Icon name="Target" size={14} className="text-blue-500 dark:text-neon transition-colors duration-500" />
-                                                    {t.title}
+                                        <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white italic">Folga (6h)</h3>
+                                    </div>
+                                    <div className="space-y-4 flex-1">
+                                        {studyPools.folga.map(pool => (
+                                            <div key={pool.idProg} className="p-4 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2">Trilha {pool.idProg}</p>
+                                                <div className="space-y-2">
+                                                    {pool.tasks.map(t => (
+                                                        <div key={t.id} className="text-xs font-bold text-slate-600 dark:text-gray-300 flex gap-2"><div className="w-1 h-1 bg-blue-500 dark:bg-neon rounded-full mt-1.5 shrink-0"></div>{t.title}</div>
+                                                    ))}
                                                 </div>
-                                            ))}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder flex flex-col h-full transition-colors duration-500">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="p-2 bg-amber-100 dark:bg-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400">
+                                            <Icon name="Briefcase" size={20} />
+                                        </div>
+                                        <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white italic">Trabalho (3h)</h3>
+                                    </div>
+                                    <div className="space-y-4 flex-1">
+                                        {studyPools.trabalho.map(pool => (
+                                            <div key={pool.idProg} className="p-4 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2">Trilha {pool.idProg}</p>
+                                                <div className="space-y-2">
+                                                    {pool.tasks.map(t => (
+                                                        <div key={t.id} className="text-xs font-bold text-slate-600 dark:text-gray-300 flex gap-2"><div className="w-1 h-1 bg-amber-500 dark:bg-amber-400 rounded-full mt-1.5 shrink-0"></div>{t.title}</div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder flex flex-col h-full transition-colors duration-500">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="p-2 bg-purple-100 dark:bg-purple-500/20 rounded-xl text-purple-600 dark:text-purple-400">
+                                            <Icon name="Target" size={20} />
+                                        </div>
+                                        <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white italic">Livre / Rev</h3>
+                                    </div>
+                                    <div className="space-y-4 flex-1">
+                                        {studyPools.livre.map(pool => (
+                                            <div key={pool.idProg} className="p-4 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2">Trilha {pool.idProg}</p>
+                                                <div className="space-y-2">
+                                                    {pool.tasks.map(t => (
+                                                        <div key={t.id} className="text-xs font-bold text-slate-600 dark:text-gray-300 flex gap-2"><div className="w-1 h-1 bg-purple-500 dark:bg-purple-400 rounded-full mt-1.5 shrink-0"></div>{t.title}</div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <div className="p-4 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500 mt-4">
+                                            <p className="text-xs font-bold text-slate-600 dark:text-gray-300 text-center italic">As revisões espaçadas (1, 7, 15, 30 dias) são adicionadas automaticamente a qualquer dia, conforme o seu histórico.</p>
                                         </div>
                                     </div>
-                                ))}
+                                </div>
                             </div>
                         )}
                     </main>
