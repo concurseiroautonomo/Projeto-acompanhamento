@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bancário Pro FGV - Cloud Planner</title>
+    <title>Bancário Pro FGV - Dark Neon</title>
     <!-- React e Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -17,12 +17,18 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
         .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Tema Customizado Scrollbar p/ o Grid do GitHub */
+        .git-scroll::-webkit-scrollbar { display: block; height: 6px; }
+        .git-scroll::-webkit-scrollbar-track { background: #111827; border-radius: 10px; }
+        .git-scroll::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 10px; }
+        .git-scroll::-webkit-scrollbar-thumb:hover { background: #10b981; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900">
+<body class="bg-gray-950 text-gray-200">
     <div id="root"></div>
 
     <!-- Firebase SDKs via CDN -->
@@ -31,7 +37,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // SUA CONFIGURAÇÃO DO FIREBASE (Com separação para não alertar o GitHub)
+        // SUA CONFIGURAÇÃO DO FIREBASE
         const userFirebaseConfig = {
             apiKey: "AIzaSy" + "A46Uem7mCWbN7wpxL3I_naKM8ZxcPzwZE",
             authDomain: "acompanhemento-de-estudos.firebaseapp.com",
@@ -47,7 +53,6 @@
             const db = getFirestore(app);
             const appId = 'study-fgv-pro-cloud';
 
-            // Expõe o Firebase globalmente para o React
             window.fb = {
                 auth, db, appId, signInAnonymously, onAuthStateChanged,
                 doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc
@@ -89,7 +94,7 @@
 
             const [currentDayNumber, setCurrentDayNumber] = useState(1);
             const [activeTab, setActiveTab] = useState('hoje');
-            const [dashSubTab, setDashSubTab] = useState('horas');
+            const [dashSubTab, setDashSubTab] = useState('dias'); // Começa na aba "Dias" por padrão para exibir o gráfico
             const [timerSeconds, setTimerSeconds] = useState(0);
             const [isTimerRunning, setIsTimerRunning] = useState(false);
             
@@ -155,13 +160,10 @@
                 return () => { unsubLogs(); unsubMeta(); };
             }, [user]);
 
-            // UTILITÁRIO ANTI-BLOQUEIO INFINITO
             const withTimeout = (promise, ms, errorMessage) => {
                 let timeoutId;
                 const timeoutPromise = new Promise((_, reject) => {
-                    timeoutId = setTimeout(() => {
-                        reject(new Error(errorMessage));
-                    }, ms);
+                    timeoutId = setTimeout(() => reject(new Error(errorMessage)), ms);
                 });
                 return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
             };
@@ -170,21 +172,22 @@
                 if (!user || !window.fb) return;
                 const metaRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'userMeta', 'state');
                 try {
+                    const updates = {};
+                    if (newCompleted) updates.completedTasks = newCompleted;
+                    if (newStops) updates.stopPoints = newStops;
+                    if (dayNum) updates.currentDayNumber = dayNum;
+
                     await withTimeout(
-                        window.fb.setDoc(metaRef, { 
-                            completedTasks: newCompleted || completedTasks, 
-                            stopPoints: newStops || stopPoints,
-                            currentDayNumber: dayNum || currentDayNumber
-                        }, { merge: true }),
+                        window.fb.setDoc(metaRef, updates, { merge: true }),
                         8000,
-                        "Timeout ao guardar o estado de conclusão da tarefa."
+                        "Timeout ao guardar o estado."
                     );
                 } catch (e) {
                     console.error("Erro ao salvar estado:", e);
                     if (e.message.includes('permission') || e.code === 'permission-denied') {
                         setError("firestore/permission-denied");
                     } else {
-                        alert("Aviso: " + e.message);
+                        alert("Aviso: Falha na gravação do estado. " + e.message);
                     }
                 }
             };
@@ -193,11 +196,7 @@
                 const h = Math.floor(totalSeconds / 3600);
                 const m = Math.floor((totalSeconds % 3600) / 60);
                 const s = totalSeconds % 60;
-                return { 
-                    h: h.toString().padStart(2, '0'), 
-                    m: m.toString().padStart(2, '0'), 
-                    s: s.toString().padStart(2, '0') 
-                };
+                return { h: h.toString().padStart(2, '0'), m: m.toString().padStart(2, '0'), s: s.toString().padStart(2, '0') };
             };
 
             const formatTimeString = (s) => {
@@ -272,12 +271,20 @@
                     return acc;
                 }, {});
 
+                // Mapa de Intensidade para o Gráfico estilo GitHub (Soma de Segundos por Dia)
+                const intensityMap = {};
+                studyLogs.forEach(log => {
+                    if (!intensityMap[log.recordedDay]) intensityMap[log.recordedDay] = 0;
+                    intensityMap[log.recordedDay] += (log.totalSeconds || 0);
+                });
+
                 return {
                     totalSeconds: studyLogs.reduce((a, b) => a + (b.totalSeconds || 0), 0),
                     totalAcertos: studyLogs.reduce((a, b) => a + (b.acertos || 0), 0),
                     totalErros: studyLogs.reduce((a, b) => a + (b.erros || 0), 0),
                     diasEstudados: new Set(studyLogs.map(l => l.fullDate)).size,
-                    logsByMateria
+                    logsByMateria,
+                    intensityMap
                 };
             }, [studyLogs]);
 
@@ -302,7 +309,7 @@
                 } else {
                     const newTasks = { ...completedTasks };
                     delete newTasks[taskKey];
-                    updateCloudState(newTasks);
+                    updateCloudState(newTasks, null, null);
                 }
             };
 
@@ -311,7 +318,6 @@
                     alert("Atenção: Sistema não conectado ao Firebase.");
                     return;
                 }
-                
                 if (isSubmitting) return;
                 setIsSubmitting(true);
 
@@ -320,12 +326,10 @@
                     const finalH = pad(logForm.h);
                     const finalM = pad(logForm.m);
                     const finalS = pad(logForm.s);
-                    
                     const totalSec = (parseInt(finalH, 10) * 3600) + (parseInt(finalM, 10) * 60) + parseInt(finalS, 10);
                     
                     const numAcertos = parseInt(logForm.acertos, 10);
                     const numTotal = parseInt(logForm.total, 10);
-                    
                     const safeAcertos = isNaN(numAcertos) ? 0 : numAcertos;
                     const safeTotal = isNaN(numTotal) ? 0 : numTotal;
                     const safeErros = Math.max(0, safeTotal - safeAcertos);
@@ -334,7 +338,7 @@
                         recordedDay: currentDayNumber,
                         fullDate: new Date().toLocaleDateString('pt-BR'),
                         materia: activeTaskForLog.materia || 'Geral',
-                        assunto: logForm.assunto || 'Sem assunto especificado',
+                        assunto: logForm.assunto || 'Sessão sem título',
                         totalSeconds: totalSec,
                         timeStr: `${finalH}:${finalM}:${finalS}`,
                         acertos: safeAcertos,
@@ -357,16 +361,10 @@
                     }
 
                     const logsCol = window.fb.collection(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs');
-                    
-                    // AQUI ESTÁ A PROTEÇÃO CONTRA O "ENCRAVAMENTO" (Espera máximo 8 segundos)
-                    await withTimeout(
-                        window.fb.addDoc(logsCol, logData),
-                        8000,
-                        "A Base de Dados não respondeu. Verifique sua conexão e tente novamente."
-                    );
+                    await withTimeout(window.fb.addDoc(logsCol, logData), 8000, "Timeout ao salvar Log no Firebase.");
                     
                     const newTasks = { ...completedTasks, [activeTaskForLog.key]: true };
-                    await updateCloudState(newTasks, newStops);
+                    await updateCloudState(newTasks, newStops, null);
                     
                     setShowLogModal(false);
                     setTimerSeconds(0);
@@ -374,11 +372,8 @@
 
                 } catch (e) {
                     console.error("Erro CRÍTICO ao guardar:", e);
-                    if (e.message.includes('permission') || e.code === 'permission-denied') {
-                        setError("firestore/permission-denied");
-                    } else {
-                        alert("Falha na Sincronização: " + e.message);
-                    }
+                    if (e.message.includes('permission') || e.code === 'permission-denied') setError("firestore/permission-denied");
+                    else alert("Falha na Sincronização: " + e.message);
                 } finally {
                     setIsSubmitting(false);
                 }
@@ -389,87 +384,60 @@
                 setLogForm(prev => ({ ...prev, [field]: cleanValue }));
             };
 
+            const changeDay = (increment) => {
+                const newDay = Math.max(1, currentDayNumber + increment);
+                setCurrentDayNumber(newDay);
+                updateCloudState(null, null, newDay);
+            };
+
             if (loading) return (
-                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-indigo-400 p-8">
+                <div className="min-h-screen flex items-center justify-center bg-gray-950 text-emerald-400 p-8">
                     <div className="flex flex-col items-center gap-6 text-center max-w-sm">
-                        <Icon name="Zap" size={64} className="animate-pulse" />
+                        <Icon name="Zap" size={64} className="animate-pulse drop-shadow-[0_0_20px_rgba(52,211,153,0.8)]" />
                         <div className="space-y-2">
-                            <p className="font-black uppercase tracking-widest text-xs">Sincronizando com a Nuvem...</p>
-                            <p className="text-[10px] text-slate-500 font-medium">Acesso Seguro ao Firebase.</p>
+                            <p className="font-black uppercase tracking-[0.2em] text-xs">Sincronizando com a Nuvem...</p>
+                            <p className="text-[10px] text-gray-500 font-medium">Dark Neon System</p>
                         </div>
                     </div>
                 </div>
             );
 
-            // TELA DE ERRO DE PERMISSÃO DEDICADA
-            if (error === "firestore/permission-denied") return (
-                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6 animate-fade-in">
-                    <div className="text-center bg-slate-800 p-8 md:p-10 rounded-[3rem] max-w-2xl shadow-2xl border border-rose-900/30">
-                        <div className="w-20 h-20 bg-rose-500 rounded-[2rem] flex items-center justify-center mb-6 mx-auto shadow-lg shadow-rose-900/50">
-                            <Icon name="Lock" size={40} />
-                        </div>
-                        <h2 className="text-2xl font-black uppercase italic mb-3 tracking-tighter">Acesso Negado na Base de Dados</h2>
-                        <p className="text-sm text-slate-300 mb-8 font-medium leading-relaxed">
-                            O seu Firebase está a bloquear a leitura e gravação dos dados. Isto acontece porque as <strong>Regras de Segurança</strong> não estão em "Modo de Teste".
-                        </p>
-                        <div className="text-left text-[11px] text-slate-300 space-y-3 mb-10 bg-slate-900 p-6 rounded-3xl border border-slate-700">
-                            <p className="font-black text-white uppercase mb-4 tracking-widest">Siga estes passos para libertar o acesso:</p>
-                            <ol className="list-decimal pl-4 space-y-3 font-medium">
-                                <li>Aceda ao <a href="https://console.firebase.google.com" target="_blank" className="text-indigo-400 font-bold underline">Firebase Console</a>.</li>
-                                <li>No menu lateral esquerdo, clique em <strong>Firestore Database</strong>.</li>
-                                <li>No topo da página do banco de dados, clique no separador <strong>Regras (Rules)</strong>.</li>
-                                <li>Apague o que estiver lá e <strong>cole exatamente este código</strong>:</li>
-                            </ol>
-                            <div className="bg-slate-950 p-4 rounded-xl mt-3 font-mono text-[11px] text-emerald-400 overflow-x-auto shadow-inner">
-<pre>{`rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}`}</pre>
-                            </div>
-                            <ol className="list-decimal pl-4 space-y-3 font-medium mt-4" start="5">
-                                <li>Clique no botão <strong>Publicar (Publish)</strong>.</li>
-                                <li>Aguarde alguns segundos e clique no botão abaixo para recarregar o planeador.</li>
-                            </ol>
-                        </div>
-                        <button onClick={() => window.location.reload()} className="bg-indigo-600 w-full py-5 rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all active:scale-95 shadow-xl">
-                            Já publiquei as Regras! Recarregar
-                        </button>
-                    </div>
-                </div>
-            );
-
-            // ERROS GERAIS
             if (error) return (
-                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6 animate-fade-in">
-                    <div className="text-center bg-slate-800 p-10 rounded-[3rem] max-w-lg shadow-2xl border border-rose-900/30">
-                        <div className="w-20 h-20 bg-rose-500 rounded-[2rem] flex items-center justify-center mb-8 mx-auto shadow-lg shadow-rose-900/50">
+                <div className="min-h-screen flex items-center justify-center bg-gray-950 text-white p-6 animate-fade-in">
+                    <div className="text-center bg-gray-900 p-10 rounded-[3rem] max-w-lg shadow-2xl border border-rose-900/30">
+                        <div className="w-20 h-20 bg-rose-500 rounded-[2rem] flex items-center justify-center mb-8 mx-auto shadow-[0_0_30px_rgba(244,63,94,0.4)] text-black">
                             <Icon name="AlertTriangle" size={40} />
                         </div>
                         <h2 className="text-2xl font-black uppercase italic mb-2 tracking-tighter">Conexão Bloqueada</h2>
-                        <p className="text-xs text-rose-300 mb-8 font-black uppercase tracking-widest">Erro: {error}</p>
-                        <button onClick={() => window.location.reload()} className="bg-indigo-600 w-full py-5 rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all active:scale-95 shadow-xl">Recarregar App</button>
+                        <p className="text-xs text-rose-400 mb-8 font-black uppercase tracking-widest">Erro: {error}</p>
+                        <button onClick={() => window.location.reload()} className="bg-emerald-500 text-black w-full py-5 rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-emerald-400 transition-all active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.3)]">Recarregar App</button>
                     </div>
                 </div>
             );
 
             return (
-                <div className="min-h-screen flex flex-col pb-24">
-                    <header className="bg-slate-900 text-white p-6 sticky top-0 z-40 shadow-xl border-b border-white/5">
-                        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-indigo-600 rounded-xl shadow-lg"><Icon name="Zap" /></div>
+                <div className="min-h-screen flex flex-col pb-24 selection:bg-emerald-500 selection:text-black">
+                    {/* Header Dark Neon */}
+                    <header className="bg-gray-900/80 backdrop-blur-xl text-white p-6 sticky top-0 z-40 border-b border-emerald-500/20 shadow-lg">
+                        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+                            <div className="flex items-center gap-4">
+                                <div className="p-2.5 bg-emerald-500 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] text-black">
+                                    <Icon name="Zap" size={24} />
+                                </div>
                                 <div>
-                                    <h1 className="text-xl font-black italic tracking-tighter uppercase leading-none">FGV PRO <span className="text-indigo-400 italic">Master</span></h1>
-                                    <p className="text-slate-500 text-[9px] font-black uppercase tracking-[0.3em] mt-1 italic">Gestão de Conteúdo Cloud</p>
+                                    <h1 className="text-2xl font-black italic tracking-tighter uppercase leading-none text-white drop-shadow-md">
+                                        FGV <span className="text-emerald-400">Master</span>
+                                    </h1>
+                                    <p className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.4em] mt-1">Dark Neon Edition</p>
                                 </div>
                             </div>
-                            <nav className="flex bg-slate-800 p-1 rounded-2xl border border-slate-700">
+                            <nav className="flex bg-gray-950 p-1.5 rounded-2xl border border-gray-800 shadow-inner">
                                 {['hoje', 'dashboard', 'ciclo'].map(tab => (
-                                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase transition-all ${activeTab === tab ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
+                                    <button 
+                                        key={tab} 
+                                        onClick={() => setActiveTab(tab)} 
+                                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase transition-all duration-300 ${activeTab === tab ? 'bg-emerald-500 text-gray-950 shadow-[0_0_15px_rgba(16,185,129,0.3)] scale-105' : 'text-gray-500 hover:text-emerald-400 hover:bg-gray-900'}`}
+                                    >
                                         {tab}
                                     </button>
                                 ))}
@@ -481,36 +449,38 @@ service cloud.firestore {
                         {activeTab === 'hoje' && (
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                                 <div className="lg:col-span-2 space-y-6">
-                                    <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-200">
-                                        <div className="flex items-center justify-between mb-8">
+                                    <div className="bg-gray-900 rounded-[2.5rem] p-8 shadow-xl border border-gray-800 relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-[60px] rounded-full pointer-events-none"></div>
+                                        
+                                        <div className="flex items-center justify-between mb-8 relative z-10">
                                             <div>
-                                                <h2 className="text-3xl font-black text-slate-800 tracking-tighter italic">Dia {currentDayNumber}</h2>
-                                                <p className="text-sm font-bold text-indigo-600 uppercase tracking-tighter italic">{currentDayMeta.type}</p>
+                                                <h2 className="text-4xl font-black text-white tracking-tighter italic drop-shadow-sm">Dia {currentDayNumber}</h2>
+                                                <p className="text-sm font-bold text-emerald-400 uppercase tracking-widest mt-1">{currentDayMeta.type}</p>
                                             </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => { const d = currentDayNumber > 1 ? currentDayNumber - 1 : 1; setCurrentDayNumber(d); updateCloudState(null, null, d); }} className="p-3 bg-slate-100 text-slate-400 hover:text-indigo-600 rounded-2xl active:scale-95 transition-all"><Icon name="ChevronLeft"/></button>
-                                                <button onClick={() => { const d = currentDayNumber + 1; setCurrentDayNumber(d); updateCloudState(null, null, d); }} className="p-3 bg-slate-100 text-slate-400 hover:text-indigo-600 rounded-2xl active:scale-95 transition-all"><Icon name="ChevronRight"/></button>
+                                            <div className="flex gap-3">
+                                                <button onClick={() => changeDay(-1)} className="p-3 bg-gray-800 text-gray-400 hover:text-emerald-400 hover:bg-gray-950 rounded-2xl active:scale-95 transition-all border border-gray-700"><Icon name="ChevronLeft"/></button>
+                                                <button onClick={() => changeDay(1)} className="p-3 bg-gray-800 text-gray-400 hover:text-emerald-400 hover:bg-gray-950 rounded-2xl active:scale-95 transition-all border border-gray-700"><Icon name="ChevronRight"/></button>
                                             </div>
                                         </div>
                                         
-                                        <div className="space-y-4">
+                                        <div className="space-y-4 relative z-10">
                                             {currentDayTasks.map((task, idx) => {
                                                 const tKey = `day-${currentDayNumber}-${task.id}`;
                                                 const lastStop = stopPoints[task.materia];
                                                 const isDone = completedTasks[tKey];
                                                 return (
-                                                    <div key={`${tKey}-${idx}`} onClick={() => handleToggleTask(task)} className={`group flex items-center gap-5 p-5 rounded-[2rem] border-2 transition-all cursor-pointer ${isDone ? 'bg-emerald-50 border-emerald-100 opacity-60' : 'bg-white border-slate-50 hover:border-indigo-200 shadow-sm'}`}>
-                                                        <div className={`p-2.5 rounded-2xl ${isDone ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-100 text-slate-300 group-hover:text-indigo-400'}`}>
-                                                            <Icon name={isDone ? "Check" : "Circle"} size={26} />
+                                                    <div key={`${tKey}-${idx}`} onClick={() => handleToggleTask(task)} className={`group flex items-center gap-5 p-5 rounded-[2rem] border transition-all cursor-pointer ${isDone ? 'bg-emerald-900/20 border-emerald-500/30' : 'bg-gray-950 border-gray-800 hover:border-emerald-500/50 shadow-md'}`}>
+                                                        <div className={`p-3 rounded-2xl transition-all ${isDone ? 'bg-emerald-500 text-gray-900 shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-gray-800 text-gray-500 group-hover:text-emerald-400 group-hover:bg-gray-900'}`}>
+                                                            <Icon name={isDone ? "Check" : "Circle"} size={24} />
                                                         </div>
                                                         <div className="flex-1">
-                                                            <p className={`font-black text-lg ${isDone ? 'line-through text-slate-400' : 'text-slate-800 uppercase italic'}`}>{task.title}</p>
-                                                            <div className="flex flex-wrap items-center gap-3 mt-1">
-                                                                <span className={`text-[10px] font-black uppercase tracking-widest ${task.cat === 'Revisão' ? 'text-indigo-500' : 'text-slate-400'}`}>{task.cat}</span>
+                                                            <p className={`font-black text-lg transition-all ${isDone ? 'line-through text-gray-500' : 'text-gray-100 uppercase italic'}`}>{task.title}</p>
+                                                            <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                                                                <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${task.cat === 'Revisão' ? 'bg-indigo-900/40 text-indigo-400 border border-indigo-500/20' : 'bg-gray-800 text-gray-400'}`}>{task.cat}</span>
                                                                 {lastStop && !isDone && (
-                                                                    <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 border border-amber-100 rounded-full">
-                                                                        <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse"></span>
-                                                                        <span className="text-[9px] font-black text-amber-700 uppercase tracking-tighter">Parou em: {lastStop.value}</span>
+                                                                    <div className="flex items-center gap-1.5 px-3 py-0.5 bg-emerald-900/30 border border-emerald-500/30 rounded-full">
+                                                                        <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_5px_#34d399]"></span>
+                                                                        <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Parou em: {lastStop.value}</span>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -518,24 +488,25 @@ service cloud.firestore {
                                                     </div>
                                                 );
                                             })}
+                                            {currentDayTasks.length === 0 && <p className="text-gray-500 text-center italic py-4">Sem tarefas para hoje.</p>}
                                         </div>
                                     </div>
-                                    <div className="bg-indigo-50 rounded-2xl p-6 border-l-4 border-indigo-600 flex gap-4">
-                                        <Icon name="Info" className="text-indigo-600 shrink-0 mt-1" />
-                                        <p className="text-sm text-indigo-900 leading-relaxed font-medium italic">"{currentDayMeta.tips}"</p>
+                                    <div className="bg-gray-900 rounded-2xl p-6 border-l-4 border-emerald-500 flex gap-4 shadow-lg">
+                                        <Icon name="Info" className="text-emerald-500 shrink-0 mt-1 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                                        <p className="text-sm text-gray-300 leading-relaxed font-medium italic">"{currentDayMeta.tips}"</p>
                                     </div>
                                 </div>
 
                                 <div className="space-y-6">
-                                    <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden border-b-8 border-indigo-600">
-                                        <div className="absolute -top-10 -right-10 opacity-5"><Icon name="Clock" size={160} /></div>
-                                        <h3 className="text-xs font-black uppercase tracking-[0.3em] text-indigo-400 mb-6 italic">Temporizador Focado</h3>
-                                        <div className="text-6xl font-mono font-bold mb-12 tracking-tighter tabular-nums text-white/90">{formatTimeString(timerSeconds)}</div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <button onClick={() => setIsTimerRunning(!isTimerRunning)} className={`py-5 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl transition-all active:scale-95 ${isTimerRunning ? 'bg-rose-500 shadow-rose-900/40' : 'bg-indigo-600 shadow-indigo-900/40 hover:bg-indigo-700'}`}>
-                                                <Icon name={isTimerRunning ? "Pause" : "Play"} size={16}/> {isTimerRunning ? 'Pausar' : 'Focar'}
+                                    <div className="bg-gray-950 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden border border-emerald-500/20 shadow-[0_0_40px_rgba(16,185,129,0.05)]">
+                                        <div className="absolute -top-10 -right-10 opacity-5 text-emerald-500"><Icon name="Clock" size={160} /></div>
+                                        <h3 className="text-xs font-black uppercase tracking-[0.3em] text-emerald-500 mb-6 drop-shadow-[0_0_5px_rgba(16,185,129,0.8)]">Foco Neon</h3>
+                                        <div className="text-6xl font-mono font-black mb-12 tracking-tighter tabular-nums text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">{formatTimeString(timerSeconds)}</div>
+                                        <div className="grid grid-cols-2 gap-4 relative z-10">
+                                            <button onClick={() => setIsTimerRunning(!isTimerRunning)} className={`py-5 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-2 transition-all active:scale-95 ${isTimerRunning ? 'bg-rose-500 text-white shadow-[0_0_20px_rgba(244,63,94,0.4)]' : 'bg-emerald-500 text-gray-950 shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:bg-emerald-400 hover:shadow-[0_0_30px_rgba(16,185,129,0.6)]'}`}>
+                                                <Icon name={isTimerRunning ? "Pause" : "Play"} size={16}/> {isTimerRunning ? 'Pausar' : 'Iniciar'}
                                             </button>
-                                            <button onClick={() => setTimerSeconds(0)} className="bg-slate-800/50 py-5 rounded-2xl font-black flex items-center justify-center hover:bg-slate-700 transition-colors"><Icon name="RotateCcw" size={18}/></button>
+                                            <button onClick={() => setTimerSeconds(0)} className="bg-gray-800 py-5 rounded-2xl font-black flex items-center justify-center text-gray-400 hover:bg-gray-700 hover:text-white transition-colors border border-gray-700"><Icon name="RotateCcw" size={18}/></button>
                                         </div>
                                     </div>
                                 </div>
@@ -544,62 +515,99 @@ service cloud.firestore {
 
                         {activeTab === 'dashboard' && (
                             <div className="space-y-8 animate-fade-in">
-                                <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 w-fit">
+                                <div className="flex bg-gray-900 p-1.5 rounded-2xl shadow-lg border border-gray-800 w-fit mx-auto md:mx-0">
                                     {[
+                                        { id: 'dias', label: 'Matriz (Dias)', icon: 'Calendar' },
                                         { id: 'horas', label: 'Horas', icon: 'Clock' },
-                                        { id: 'dias', label: 'Dias', icon: 'Calendar' },
                                         { id: 'desempenho', label: 'Matérias', icon: 'Target' }
                                     ].map(sub => (
-                                        <button key={sub.id} onClick={() => setDashSubTab(sub.id)} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${dashSubTab === sub.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+                                        <button key={sub.id} onClick={() => setDashSubTab(sub.id)} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase transition-all ${dashSubTab === sub.id ? 'bg-emerald-500 text-gray-950 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'text-gray-500 hover:text-emerald-400 hover:bg-gray-800'}`}>
                                             <Icon name={sub.icon} size={14} /> {sub.label}
                                         </button>
                                     ))}
                                 </div>
 
-                                {dashSubTab === 'horas' && (
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
-                                        <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col justify-center text-center">
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Carga Horária Acumulada</p>
-                                            <h3 className="text-4xl font-black text-slate-800 tracking-tighter italic">{formatTimeString(metrics.totalSeconds)}</h3>
-                                        </div>
-                                        <div className="md:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 italic">Últimos Registros Sincronizados</h4>
-                                            <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar pr-2">
-                                                {studyLogs.sort((a,b) => b.timestamp - a.timestamp).map(log => (
-                                                    <div key={log.id} className="p-5 bg-slate-50 rounded-3xl border border-slate-100 hover:border-indigo-200 transition-all">
-                                                        <div className="flex justify-between items-start mb-3">
-                                                            <div>
-                                                                <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">{log.fullDate}</span>
-                                                                <h5 className="font-black text-slate-800 uppercase italic leading-tight">{log.materia}</h5>
-                                                            </div>
-                                                            <p className="font-mono font-black text-slate-900 text-lg leading-none">{log.timeStr}</p>
-                                                        </div>
-                                                        <p className="text-xs font-bold text-slate-500 italic">"{log.assunto || 'Sem assunto definido'}"</p>
+                                {dashSubTab === 'dias' && (
+                                    <div className="bg-gray-900 p-8 rounded-[3rem] shadow-xl border border-gray-800 text-center animate-fade-in relative overflow-hidden">
+                                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-emerald-500/5 blur-[80px] rounded-full pointer-events-none"></div>
+                                        
+                                        <div className="relative z-10">
+                                            <div className="flex items-end justify-center gap-4 mb-4">
+                                                <h3 className="text-8xl font-black text-emerald-400 tracking-tighter italic drop-shadow-[0_0_15px_rgba(52,211,153,0.3)] leading-none">{currentDayNumber}</h3>
+                                            </div>
+                                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em] mb-12">Dia Atual do Ciclo</p>
+                                            
+                                            {/* GITHUB STYLE CONTRIBUTION GRAPH */}
+                                            <div className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto overflow-hidden">
+                                                <div className="w-full overflow-x-auto pb-4 git-scroll">
+                                                    <div className="inline-grid grid-rows-7 grid-flow-col gap-2 p-5 bg-gray-950 rounded-2xl border border-gray-800 shadow-inner min-w-max">
+                                                        {Array.from({length: Math.max(98, Math.ceil(currentDayNumber / 7) * 7 + 14)}).map((_, i) => {
+                                                            const dayNum = i + 1;
+                                                            const seconds = metrics.intensityMap[dayNum] || 0;
+                                                            
+                                                            // Escala de Cores (GitHub Style Neon)
+                                                            let colorClass = "bg-gray-800/60 border border-gray-800/80"; // Nível 0
+                                                            if (seconds > 0 && seconds < 3600) colorClass = "bg-emerald-900/80 border border-emerald-900"; // < 1h
+                                                            else if (seconds >= 3600 && seconds < 10800) colorClass = "bg-emerald-700/80 border border-emerald-600"; // 1h - 3h
+                                                            else if (seconds >= 10800 && seconds < 21600) colorClass = "bg-emerald-500/90 border border-emerald-400"; // 3h - 6h
+                                                            else if (seconds >= 21600) colorClass = "bg-emerald-400 shadow-[0_0_10px_#34d399] border border-emerald-300 z-10 relative"; // 6h+
+                                                            
+                                                            const isCurrent = dayNum === currentDayNumber;
+                                                            if (isCurrent && seconds === 0) colorClass = "bg-gray-800 ring-2 ring-emerald-500 ring-offset-1 ring-offset-gray-950 z-10 relative";
+
+                                                            return (
+                                                                <div 
+                                                                    key={i} 
+                                                                    title={`Dia ${dayNum}${seconds > 0 ? ` - ${formatTimeString(seconds)}` : ''}`}
+                                                                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-[4px] transition-all duration-300 hover:scale-150 hover:z-20 cursor-crosshair ${colorClass}`}
+                                                                ></div>
+                                                            );
+                                                        })}
                                                     </div>
-                                                ))}
-                                                {studyLogs.length === 0 && <p className="text-center text-slate-300 italic py-10 font-black tracking-widest text-[10px]">Sem dados em nuvem.</p>}
+                                                </div>
+                                                
+                                                <div className="flex items-center justify-between w-full max-w-sm mt-6 text-[9px] font-black text-gray-500 uppercase tracking-widest px-4">
+                                                    <span>Iniciante</span>
+                                                    <div className="flex items-center gap-1.5 bg-gray-950 p-2 rounded-xl border border-gray-800">
+                                                        <div className="w-3 h-3 rounded-[3px] bg-gray-800/60 border border-gray-800/80"></div>
+                                                        <div className="w-3 h-3 rounded-[3px] bg-emerald-900/80 border border-emerald-900"></div>
+                                                        <div className="w-3 h-3 rounded-[3px] bg-emerald-700/80 border border-emerald-600"></div>
+                                                        <div className="w-3 h-3 rounded-[3px] bg-emerald-500/90 border border-emerald-400"></div>
+                                                        <div className="w-3 h-3 rounded-[3px] bg-emerald-400 shadow-[0_0_5px_#34d399] border border-emerald-300"></div>
+                                                    </div>
+                                                    <span>Master</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 )}
 
-                                {dashSubTab === 'dias' && (
-                                    <div className="bg-white p-12 rounded-[3rem] shadow-sm border border-slate-100 text-center animate-fade-in">
-                                        <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                                            <Icon name="Calendar" size={40} className="text-indigo-600" />
+                                {dashSubTab === 'horas' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
+                                        <div className="bg-gray-900 p-8 rounded-[2.5rem] shadow-xl border border-gray-800 flex flex-col justify-center text-center relative overflow-hidden">
+                                            <div className="absolute -bottom-10 -right-10 opacity-5 text-emerald-500"><Icon name="Clock" size={120} /></div>
+                                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 relative z-10">Total Acumulado</p>
+                                            <h3 className="text-4xl font-black text-emerald-400 tracking-tighter italic drop-shadow-[0_0_8px_rgba(52,211,153,0.3)] relative z-10">{formatTimeString(metrics.totalSeconds)}</h3>
                                         </div>
-                                        <h3 className="text-7xl font-black text-slate-800 tracking-tighter italic">{metrics.diasEstudados}</h3>
-                                        <p className="text-xs font-black text-slate-400 uppercase tracking-[0.4em] mt-2 mb-12">Dias no Ciclo</p>
-                                        <div className="grid grid-cols-7 sm:grid-cols-10 md:grid-cols-14 gap-2.5 max-w-4xl mx-auto">
-                                            {Array.from({length: Math.max(30, currentDayNumber)}).map((_, i) => {
-                                                const dayNum = i + 1;
-                                                const isDone = studyLogs.some(l => l.taskKey && l.taskKey.includes(`day-${dayNum}-`));
-                                                return (
-                                                    <div key={i} className={`aspect-square rounded-xl flex items-center justify-center text-[10px] font-black border transition-all ${isDone ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 border-slate-100 text-slate-300 opacity-40'}`}>
-                                                        {dayNum}
+                                        <div className="md:col-span-2 bg-gray-900 p-8 rounded-[2.5rem] shadow-xl border border-gray-800">
+                                            <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6 italic flex items-center gap-2">
+                                                <Icon name="History" size={16} className="text-emerald-500" /> Histórico Sincronizado
+                                            </h4>
+                                            <div className="space-y-4 max-h-[400px] overflow-y-auto git-scroll pr-4">
+                                                {studyLogs.sort((a,b) => b.timestamp - a.timestamp).map(log => (
+                                                    <div key={log.id} className="p-5 bg-gray-950 rounded-3xl border border-gray-800 hover:border-emerald-500/40 transition-all group">
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div>
+                                                                <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">{log.fullDate}</span>
+                                                                <h5 className="font-black text-gray-200 uppercase italic leading-tight">{log.materia}</h5>
+                                                            </div>
+                                                            <p className="font-mono font-black text-emerald-400 text-lg leading-none drop-shadow-sm">{log.timeStr}</p>
+                                                        </div>
+                                                        <p className="text-xs font-bold text-gray-500 italic">"{log.assunto || 'Sem assunto'}"</p>
                                                     </div>
-                                                );
-                                            })}
+                                                ))}
+                                                {studyLogs.length === 0 && <p className="text-center text-gray-600 italic py-10 font-black tracking-widest text-[10px]">Sem dados em nuvem.</p>}
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -610,20 +618,20 @@ service cloud.firestore {
                                             const totalQ = data.acertos + data.erros;
                                             const perc = totalQ > 0 ? ((data.acertos / totalQ) * 100).toFixed(1) : 0;
                                             return (
-                                                <div key={materia} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 group hover:shadow-xl transition-all">
+                                                <div key={materia} className="bg-gray-900 p-8 rounded-[2.5rem] shadow-xl border border-gray-800 hover:border-emerald-500/30 transition-all">
                                                     <div className="flex justify-between items-center mb-6">
-                                                        <h4 className="font-black text-slate-800 uppercase italic tracking-tighter text-lg">{materia}</h4>
-                                                        <span className="text-2xl font-black text-emerald-600 tracking-tighter">{perc}%</span>
+                                                        <h4 className="font-black text-gray-200 uppercase italic tracking-tighter text-lg">{materia}</h4>
+                                                        <span className="text-3xl font-black text-emerald-400 tracking-tighter drop-shadow-[0_0_8px_rgba(52,211,153,0.3)]">{perc}%</span>
                                                     </div>
-                                                    <div className="w-full bg-slate-100 h-2.5 rounded-full mb-6 overflow-hidden flex">
-                                                        <div className="bg-indigo-600 h-full transition-all" style={{width: `${perc}%`}}></div>
+                                                    <div className="w-full bg-gray-950 h-3 rounded-full mb-6 overflow-hidden border border-gray-800 flex">
+                                                        <div className="bg-emerald-500 h-full shadow-[0_0_10px_#10b981] transition-all" style={{width: `${perc}%`}}></div>
                                                     </div>
                                                     <div className="space-y-3">
-                                                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Temas abordados:</p>
+                                                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Temas abordados:</p>
                                                         {data.assuntos.slice(-3).reverse().map((a, i) => (
-                                                            <div key={i} className="flex justify-between text-[11px] font-bold text-slate-500 bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                                                                <span className="truncate">{a.assunto}</span>
-                                                                <span className="text-[10px] font-black text-slate-300 ml-2">{a.date}</span>
+                                                            <div key={i} className="flex justify-between text-[11px] font-bold text-gray-400 bg-gray-950 p-3 rounded-2xl border border-gray-800">
+                                                                <span className="truncate group-hover:text-gray-200 transition-colors">{a.assunto}</span>
+                                                                <span className="text-[10px] font-black text-gray-600 ml-2">{a.date}</span>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -638,15 +646,15 @@ service cloud.firestore {
                         {activeTab === 'ciclo' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
                                 {scheduleCycleBase.map(day => (
-                                    <div key={day.day} className={`p-8 rounded-[2.5rem] bg-white border-2 shadow-sm transition-all ${currentDayNumber % 7 === day.day % 7 ? 'border-indigo-600 shadow-xl ring-2 ring-indigo-50/50' : 'border-transparent opacity-80'}`}>
-                                        <div className="flex justify-between items-center mb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                            <span>Configuração Ciclo {day.day}</span>
+                                    <div key={day.day} className={`p-8 rounded-[2.5rem] bg-gray-900 border transition-all ${currentDayNumber % 7 === day.day % 7 ? 'border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.1)]' : 'border-gray-800 opacity-70 hover:opacity-100'}`}>
+                                        <div className="flex justify-between items-center mb-6 text-[10px] font-black text-gray-500 uppercase tracking-widest">
+                                            <span>Configuração {day.day}</span>
                                         </div>
-                                        <h4 className="font-black text-slate-800 text-2xl italic tracking-tighter uppercase">{day.type}</h4>
+                                        <h4 className="font-black text-white text-2xl italic tracking-tighter uppercase">{day.type}</h4>
                                         <div className="mt-8 space-y-3">
                                             {day.tasks.map(t => (
-                                                <div key={t.id} className="flex items-center gap-3 text-xs font-bold text-slate-400 border-b border-slate-50 pb-2">
-                                                    <Icon name="Target" size={12} className="text-slate-200" />
+                                                <div key={t.id} className="flex items-center gap-3 text-xs font-bold text-gray-400 border-b border-gray-800 pb-3">
+                                                    <Icon name="Target" size={14} className="text-emerald-500" />
                                                     {t.title}
                                                 </div>
                                             ))}
@@ -657,87 +665,87 @@ service cloud.firestore {
                         )}
                     </main>
 
-                    {/* Modal de Registro Cloud SRS */}
+                    {/* Modal de Registro Cloud SRS - Dark Theme */}
                     {showLogModal && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fade-in">
-                            <div className="bg-white rounded-[2.5rem] w-full max-w-lg max-h-[90vh] overflow-y-auto no-scrollbar p-8 md:p-12 shadow-2xl relative border border-white/20">
-                                <button onClick={() => setShowLogModal(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-600 transition-colors"><Icon name="X" size={24}/></button>
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-fade-in">
+                            <div className="bg-gray-900 rounded-[2.5rem] w-full max-w-lg max-h-[90vh] overflow-y-auto git-scroll p-8 md:p-12 shadow-2xl relative border border-emerald-500/30">
+                                <button onClick={() => setShowLogModal(false)} className="absolute top-8 right-8 text-gray-500 hover:text-emerald-400 transition-colors"><Icon name="X" size={24}/></button>
                                 
                                 <div className="text-center mb-10">
-                                    <h2 className="text-3xl font-black text-slate-800 tracking-tighter italic uppercase leading-none">Registrar Missão</h2>
-                                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em] mt-3">{activeTaskForLog?.title}</p>
+                                    <h2 className="text-3xl font-black text-white tracking-tighter italic uppercase leading-none">Registrar Missão</h2>
+                                    <p className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.3em] mt-3">{activeTaskForLog?.title}</p>
                                 </div>
 
                                 <div className="space-y-6">
-                                    <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-2">
-                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'teoria'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'teoria' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}>Teoria</button>
-                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'revisao'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'revisao' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}>Revisão</button>
+                                    <div className="flex bg-gray-950 p-1.5 rounded-2xl border border-gray-800 gap-2">
+                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'teoria'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'teoria' ? 'bg-emerald-500 text-gray-950 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'text-gray-500 hover:text-emerald-400'}`}>Teoria</button>
+                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'revisao'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'revisao' ? 'bg-emerald-500 text-gray-950 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'text-gray-500 hover:text-emerald-400'}`}>Revisão</button>
                                     </div>
 
                                     {logForm.tipoEstudo === 'teoria' && (
-                                        <div className="p-6 bg-indigo-50/50 rounded-3xl space-y-6 border border-indigo-100 animate-fade-in">
+                                        <div className="p-6 bg-gray-950 rounded-3xl space-y-6 border border-gray-800 animate-fade-in shadow-inner">
                                             <div className="flex items-center gap-4 flex-wrap">
                                                 <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input type="radio" className="w-4 h-4 text-indigo-600" checked={logForm.tipoTeoria === 'pdf'} onChange={() => setLogForm({...logForm, tipoTeoria: 'pdf'})} />
-                                                    <span className="text-xs font-black uppercase text-indigo-900">PDF</span>
+                                                    <input type="radio" className="w-4 h-4 text-emerald-500 bg-gray-800 border-gray-700 focus:ring-emerald-500 focus:ring-offset-gray-950" checked={logForm.tipoTeoria === 'pdf'} onChange={() => setLogForm({...logForm, tipoTeoria: 'pdf'})} />
+                                                    <span className="text-xs font-black uppercase text-emerald-400">PDF</span>
                                                 </label>
                                                 <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input type="radio" className="w-4 h-4 text-indigo-600" checked={logForm.tipoTeoria === 'video'} onChange={() => setLogForm({...logForm, tipoTeoria: 'video'})} />
-                                                    <span className="text-xs font-black uppercase text-indigo-900">Vídeo Aula</span>
+                                                    <input type="radio" className="w-4 h-4 text-emerald-500 bg-gray-800 border-gray-700 focus:ring-emerald-500 focus:ring-offset-gray-950" checked={logForm.tipoTeoria === 'video'} onChange={() => setLogForm({...logForm, tipoTeoria: 'video'})} />
+                                                    <span className="text-xs font-black uppercase text-emerald-400">Vídeo</span>
                                                 </label>
                                                 <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input type="radio" className="w-4 h-4 text-indigo-600" checked={logForm.tipoTeoria === 'questoes'} onChange={() => setLogForm({...logForm, tipoTeoria: 'questoes'})} />
-                                                    <span className="text-xs font-black uppercase text-indigo-900">Questões</span>
+                                                    <input type="radio" className="w-4 h-4 text-emerald-500 bg-gray-800 border-gray-700 focus:ring-emerald-500 focus:ring-offset-gray-950" checked={logForm.tipoTeoria === 'questoes'} onChange={() => setLogForm({...logForm, tipoTeoria: 'questoes'})} />
+                                                    <span className="text-xs font-black uppercase text-emerald-400">Qts.</span>
                                                 </label>
                                             </div>
                                             {logForm.tipoTeoria === 'pdf' ? (
-                                                <input type="number" placeholder="Em qual página parou?" className="w-full bg-white p-4 rounded-2xl text-sm font-black outline-none focus:ring-2 ring-indigo-500" value={logForm.pdfPagina} onChange={e => setLogForm({...logForm, pdfPagina: e.target.value})} />
+                                                <input type="number" placeholder="Em qual página parou?" className="w-full bg-gray-800 text-white p-4 rounded-2xl text-sm font-black outline-none border border-transparent focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" value={logForm.pdfPagina} onChange={e => setLogForm({...logForm, pdfPagina: e.target.value})} />
                                             ) : logForm.tipoTeoria === 'video' ? (
                                                 <div className="space-y-4">
-                                                    <input type="text" placeholder="Nº da Aula (ex: Aula 05)" className="w-full bg-white p-4 rounded-2xl text-sm font-black outline-none" value={logForm.videoAula} onChange={e => setLogForm({...logForm, videoAula: e.target.value})} />
+                                                    <input type="text" placeholder="Nº da Aula (ex: Aula 05)" className="w-full bg-gray-800 text-white p-4 rounded-2xl text-sm font-black outline-none border border-transparent focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" value={logForm.videoAula} onChange={e => setLogForm({...logForm, videoAula: e.target.value})} />
                                                     <div className="flex gap-2 items-center">
-                                                        <input type="text" maxLength="2" placeholder="Min" className="w-full bg-white p-4 rounded-xl text-center font-mono font-bold" value={logForm.videoMinuto} onChange={e => handleTimeInputChange('videoMinuto', e.target.value)} />
-                                                        <span className="font-bold text-indigo-300">:</span>
-                                                        <input type="text" maxLength="2" placeholder="Seg" className="w-full bg-white p-4 rounded-xl text-center font-mono font-bold" value={logForm.videoSegundo} onChange={e => handleTimeInputChange('videoSegundo', e.target.value)} />
+                                                        <input type="text" maxLength="2" placeholder="Min" className="w-full bg-gray-800 text-emerald-400 p-4 rounded-xl text-center font-mono font-bold border border-transparent focus:border-emerald-500" value={logForm.videoMinuto} onChange={e => handleTimeInputChange('videoMinuto', e.target.value)} />
+                                                        <span className="font-bold text-gray-600">:</span>
+                                                        <input type="text" maxLength="2" placeholder="Seg" className="w-full bg-gray-800 text-emerald-400 p-4 rounded-xl text-center font-mono font-bold border border-transparent focus:border-emerald-500" value={logForm.videoSegundo} onChange={e => handleTimeInputChange('videoSegundo', e.target.value)} />
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <input type="text" placeholder="Em qual questão ou lista parou?" className="w-full bg-white p-4 rounded-2xl text-sm font-black outline-none focus:ring-2 ring-indigo-500" value={logForm.questaoParada} onChange={e => setLogForm({...logForm, questaoParada: e.target.value})} />
+                                                <input type="text" placeholder="Qual lista ou questão parou?" className="w-full bg-gray-800 text-white p-4 rounded-2xl text-sm font-black outline-none border border-transparent focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" value={logForm.questaoParada} onChange={e => setLogForm({...logForm, questaoParada: e.target.value})} />
                                             )}
                                         </div>
                                     )}
 
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">Assunto Estudado</label>
-                                        <input type="text" placeholder="Ex: Crase FGV" className="w-full bg-slate-100 p-4 rounded-2xl text-sm font-black italic border-none outline-none focus:ring-2 ring-indigo-500" value={logForm.assunto} onChange={e => setLogForm({...logForm, assunto: e.target.value})} />
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1 italic">Assunto Estudado</label>
+                                        <input type="text" placeholder="Ex: Crase FGV" className="w-full bg-gray-950 border border-gray-800 text-emerald-400 placeholder-gray-600 p-4 rounded-2xl text-sm font-black italic outline-none focus:border-emerald-500 transition-all" value={logForm.assunto} onChange={e => setLogForm({...logForm, assunto: e.target.value})} />
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">Tempo Gasto</label>
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1 italic">Tempo Gasto</label>
                                             <div className="flex gap-2 items-center">
-                                                <input type="text" maxLength="2" placeholder="HH" className="w-full bg-slate-100 p-4 rounded-xl text-center font-mono font-bold" value={logForm.h} onChange={e => handleTimeInputChange('h', e.target.value)} />
-                                                <span className="font-bold text-slate-300">:</span>
-                                                <input type="text" maxLength="2" placeholder="MM" className="w-full bg-slate-100 p-4 rounded-xl text-center font-mono font-bold" value={logForm.m} onChange={e => handleTimeInputChange('m', e.target.value)} />
-                                                <span className="font-bold text-slate-300">:</span>
-                                                <input type="text" maxLength="2" placeholder="SS" className="w-full bg-slate-100 p-4 rounded-xl text-center font-mono font-bold" value={logForm.s} onChange={e => handleTimeInputChange('s', e.target.value)} />
+                                                <input type="text" maxLength="2" placeholder="HH" className="w-full bg-gray-950 border border-gray-800 text-white placeholder-gray-700 p-4 rounded-xl text-center font-mono font-bold focus:border-emerald-500 outline-none" value={logForm.h} onChange={e => handleTimeInputChange('h', e.target.value)} />
+                                                <span className="font-bold text-gray-600">:</span>
+                                                <input type="text" maxLength="2" placeholder="MM" className="w-full bg-gray-950 border border-gray-800 text-white placeholder-gray-700 p-4 rounded-xl text-center font-mono font-bold focus:border-emerald-500 outline-none" value={logForm.m} onChange={e => handleTimeInputChange('m', e.target.value)} />
+                                                <span className="font-bold text-gray-600">:</span>
+                                                <input type="text" maxLength="2" placeholder="SS" className="w-full bg-gray-950 border border-gray-800 text-white placeholder-gray-700 p-4 rounded-xl text-center font-mono font-bold focus:border-emerald-500 outline-none" value={logForm.s} onChange={e => handleTimeInputChange('s', e.target.value)} />
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">Exercícios</label>
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1 italic">Exercícios</label>
                                             <div className="flex gap-3">
-                                                <input type="number" placeholder="Total" className="w-full bg-slate-50 p-4 rounded-xl text-sm font-black" value={logForm.total} onChange={e => setLogForm({...logForm, total: e.target.value})} />
-                                                <input type="number" placeholder="Acertos" className="w-full bg-emerald-50 p-4 rounded-xl text-sm font-black text-emerald-700" value={logForm.acertos} onChange={e => setLogForm({...logForm, acertos: e.target.value})} />
+                                                <input type="number" placeholder="Total" className="w-full bg-gray-950 border border-gray-800 text-white placeholder-gray-700 p-4 rounded-xl text-sm font-black focus:border-emerald-500 outline-none" value={logForm.total} onChange={e => setLogForm({...logForm, total: e.target.value})} />
+                                                <input type="number" placeholder="Acertos" className="w-full bg-emerald-900/20 border border-emerald-900/50 text-emerald-400 placeholder-emerald-800 p-4 rounded-xl text-sm font-black focus:border-emerald-500 outline-none" value={logForm.acertos} onChange={e => setLogForm({...logForm, acertos: e.target.value})} />
                                             </div>
                                         </div>
                                     </div>
 
-                                    <textarea rows="2" placeholder="O que sentiu de mais difícil nesta sessão?" className="w-full bg-slate-100 p-4 rounded-2xl text-sm font-medium border-none outline-none focus:ring-2 ring-indigo-500" value={logForm.anotacoes} onChange={e => setLogForm({...logForm, anotacoes: e.target.value})}></textarea>
+                                    <textarea rows="2" placeholder="O que sentiu de mais difícil nesta sessão?" className="w-full bg-gray-950 border border-gray-800 text-gray-300 placeholder-gray-700 p-4 rounded-2xl text-sm font-medium outline-none focus:border-emerald-500 git-scroll" value={logForm.anotacoes} onChange={e => setLogForm({...logForm, anotacoes: e.target.value})}></textarea>
 
                                     <button 
                                         onClick={submitLog} 
                                         disabled={isSubmitting}
-                                        className={`w-full text-white font-black py-5 rounded-[2rem] shadow-2xl transition-all uppercase tracking-[0.3em] text-xs italic ${isSubmitting ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
+                                        className={`w-full font-black py-5 rounded-[2rem] shadow-lg transition-all uppercase tracking-[0.3em] text-xs italic ${isSubmitting ? 'bg-emerald-900 text-emerald-700 cursor-not-allowed' : 'bg-emerald-500 text-gray-950 hover:bg-emerald-400 hover:shadow-[0_0_20px_#10b981] active:scale-95'}`}
                                     >
                                         {isSubmitting ? 'A Sincronizar...' : 'Sincronizar Cloud'}
                                     </button>
@@ -746,22 +754,22 @@ service cloud.firestore {
                         </div>
                     )}
 
-                    {/* Footer Stats Cloud */}
+                    {/* Footer Stats Cloud Neon */}
                     {!showLogModal && (
-                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 backdrop-blur-md text-white px-8 py-4 rounded-[2rem] shadow-2xl flex items-center gap-10 border border-white/10 z-50 animate-fade-in">
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur-xl text-white px-8 py-4 rounded-[2.rem] shadow-[0_0_30px_rgba(0,0,0,0.8)] flex items-center gap-10 border border-emerald-500/30 z-50 animate-fade-in rounded-full">
                             <div className="flex items-center gap-3">
-                                <div className="p-1.5 bg-emerald-500 rounded-lg text-white shadow-lg"><Icon name="Trophy" size={14}/></div>
+                                <div className="p-1.5 bg-emerald-500/20 rounded-lg text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]"><Icon name="Trophy" size={16}/></div>
                                 <div className="flex flex-col">
-                                    <span className="text-xs font-black leading-none italic">{((metrics.totalAcertos / (metrics.totalAcertos + metrics.totalErros || 1)) * 100).toFixed(1)}%</span>
-                                    <span className="text-[8px] font-black uppercase text-emerald-400 tracking-widest italic">Precisão Cloud</span>
+                                    <span className="text-sm font-black leading-none italic text-white drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]">{((metrics.totalAcertos / (metrics.totalAcertos + metrics.totalErros || 1)) * 100).toFixed(1)}%</span>
+                                    <span className="text-[8px] font-black uppercase text-emerald-500 tracking-[0.2em] mt-0.5">Precisão Cloud</span>
                                 </div>
                             </div>
-                            <div className="w-px h-8 bg-slate-700"></div>
+                            <div className="w-px h-8 bg-gray-700"></div>
                             <div className="flex items-center gap-3">
-                                <div className="p-1.5 bg-indigo-500 rounded-lg text-white shadow-lg"><Icon name="Target" size={14}/></div>
+                                <div className="p-1.5 bg-emerald-500/20 rounded-lg text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]"><Icon name="Target" size={16}/></div>
                                 <div className="flex flex-col">
-                                    <span className="text-xs font-black leading-none italic tabular-nums">{formatTimeString(metrics.totalSeconds)}</span>
-                                    <span className="text-[8px] font-black uppercase text-indigo-400 tracking-widest italic">Horas Master</span>
+                                    <span className="text-sm font-black leading-none italic tabular-nums text-white drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]">{formatTimeString(metrics.totalSeconds)}</span>
+                                    <span className="text-[8px] font-black uppercase text-emerald-500 tracking-[0.2em] mt-0.5">Horas Master</span>
                                 </div>
                             </div>
                         </div>
