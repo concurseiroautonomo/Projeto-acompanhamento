@@ -150,8 +150,6 @@
             const [currentDayNumber, setCurrentDayNumber] = useState(1);
             const [activeTab, setActiveTab] = useState('hoje');
             const [dashSubTab, setDashSubTab] = useState('dias');
-            const [timerSeconds, setTimerSeconds] = useState(0);
-            const [isTimerRunning, setIsTimerRunning] = useState(false);
             
             const [showLogModal, setShowLogModal] = useState(false);
             const [activeTaskForLog, setActiveTaskForLog] = useState(null);
@@ -393,20 +391,32 @@
                 };
             }, [studyLogs]);
 
-            useEffect(() => {
-                let interval = null;
-                if (isTimerRunning) interval = setInterval(() => setTimerSeconds(s => s + 1), 1000);
-                else clearInterval(interval);
-                return () => clearInterval(interval);
-            }, [isTimerRunning]);
+            // Calcula as horas estudadas nos últimos 7 dias corridos para o novo gráfico
+            const last7DaysHours = useMemo(() => {
+                const days = [];
+                for (let i = 6; i >= 0; i--) {
+                    const d = new Date();
+                    d.setDate(d.getDate() - i);
+                    const dateStr = d.toLocaleDateString('pt-BR');
+                    
+                    const logsOfDay = studyLogs.filter(l => l.fullDate === dateStr);
+                    const totalSec = logsOfDay.reduce((acc, l) => acc + (l.totalSeconds || 0), 0);
+                    
+                    days.push({
+                        label: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').substring(0,3),
+                        hours: totalSec / 3600
+                    });
+                }
+                return days;
+            }, [studyLogs]);
+            const maxHours = Math.max(...last7DaysHours.map(d => d.hours), 0.5); // Para evitar divisão por zero
 
             const handleToggleTask = (task) => {
                 const taskKey = `day-${currentDayNumber}-${task.id}`;
                 if (!completedTasks[taskKey]) {
                     setActiveTaskForLog({ ...task, key: taskKey });
-                    const { h, m, s } = secondsToHMS(timerSeconds);
                     setLogForm({ 
-                        assunto: '', h, m, s, total: '', acertos: '', anotacoes: '', 
+                        assunto: '', h: '00', m: '00', s: '00', total: '', acertos: '', anotacoes: '', 
                         tipoEstudo: 'teoria', tipoTeoria: 'pdf', 
                         pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '', questaoParada: '' 
                     });
@@ -472,8 +482,6 @@
                     await updateCloudState(newTasks, newStops, null);
                     
                     setShowLogModal(false);
-                    setTimerSeconds(0);
-                    setIsTimerRunning(false);
 
                 } catch (e) {
                     console.error("Erro CRÍTICO ao guardar:", e);
@@ -723,15 +731,82 @@
                                 </div>
 
                                 <div className="space-y-6">
-                                    <div className="bg-slate-900 dark:bg-darkcard rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden border border-slate-800 dark:border-neon/20 dark:shadow-[0_0_40px_rgba(0,255,136,0.05)] transition-colors duration-500">
-                                        <div className="absolute -top-10 -right-10 opacity-5 text-blue-400 dark:text-neon transition-colors duration-500"><Icon name="Clock" size={160} /></div>
-                                        <h3 className="text-xs font-black uppercase tracking-[0.3em] text-blue-400 dark:text-neon mb-6 dark:drop-shadow-[0_0_5px_rgba(0,255,136,0.8)] transition-colors duration-500">Foco Total</h3>
-                                        <div className="text-6xl font-mono font-black mb-12 tracking-tighter tabular-nums text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">{formatTimeString(timerSeconds)}</div>
-                                        <div className="grid grid-cols-2 gap-4 relative z-10">
-                                            <button onClick={() => setIsTimerRunning(!isTimerRunning)} className={`py-5 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-2 transition-all active:scale-95 ${isTimerRunning ? 'bg-rose-500 text-white shadow-[0_0_20px_rgba(244,63,94,0.4)]' : 'bg-blue-600 dark:bg-neon text-white dark:text-black shadow-[0_0_20px_rgba(37,99,235,0.4)] dark:shadow-[0_0_20px_rgba(0,255,136,0.4)] hover:bg-blue-500 dark:hover:bg-neonhover dark:hover:shadow-[0_0_30px_rgba(0,255,136,0.6)]'}`}>
-                                                <Icon name={isTimerRunning ? "Pause" : "Play"} size={16}/> {isTimerRunning ? 'Pausar' : 'Iniciar'}
-                                            </button>
-                                            <button onClick={() => setTimerSeconds(0)} className="bg-slate-800 dark:bg-[#111] py-5 rounded-2xl font-black flex items-center justify-center text-slate-300 dark:text-gray-400 hover:bg-slate-700 dark:hover:bg-darkborder hover:text-white transition-colors border border-slate-700 dark:border-darkborder"><Icon name="RotateCcw" size={18}/></button>
+                                    {/* Mini Dashboard de Matriz de Dias Substituto do Timer */}
+                                    <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500">
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[50px] rounded-full pointer-events-none transition-colors duration-500"></div>
+                                        <div className="relative z-10">
+                                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
+                                                <Icon name="Calendar" size={16} /> Matriz de Dias
+                                            </h3>
+                                            
+                                            <div className="w-full overflow-x-auto pb-2 git-scroll">
+                                                <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 bg-slate-50 dark:bg-darkbg p-4 rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500">
+                                                    {Array.from({length: Math.max(84, Math.ceil(currentDayNumber / 7) * 7)}).map((_, i) => {
+                                                        const dayNum = i + 1;
+                                                        const seconds = metrics.intensityMap[dayNum] || 0;
+                                                        
+                                                        let colorClass = isDarkMode ? "bg-[#111] border-[#222]" : "bg-slate-200 border-slate-300"; 
+                                                        if (seconds > 0 && seconds < 3600) colorClass = isDarkMode ? "bg-[#00ff88]/20 border-[#00ff88]/30" : "bg-blue-300 border-blue-400"; 
+                                                        else if (seconds >= 3600 && seconds < 10800) colorClass = isDarkMode ? "bg-[#00ff88]/50 border-[#00ff88]/60" : "bg-blue-500 border-blue-600"; 
+                                                        else if (seconds >= 10800 && seconds < 21600) colorClass = isDarkMode ? "bg-[#00ff88]/80 border-[#00ff88]/90" : "bg-blue-700 border-blue-800"; 
+                                                        else if (seconds >= 21600) colorClass = isDarkMode ? "bg-neon shadow-[0_0_10px_#00ff88] border-[#00ff88] z-10 relative" : "bg-blue-900 shadow-md border-blue-950 z-10 relative"; 
+                                                        
+                                                        const isCurrent = dayNum === currentDayNumber;
+                                                        if (isCurrent && seconds === 0) colorClass = isDarkMode ? "bg-[#111] ring-1 ring-neon ring-offset-1 ring-offset-darkbg z-10 relative" : "bg-white ring-1 ring-blue-600 ring-offset-1 ring-offset-slate-50 z-10 relative";
+
+                                                        return (
+                                                            <div 
+                                                                key={i} 
+                                                                title={`Dia ${dayNum}${seconds > 0 ? ` - ${formatTimeString(seconds)}` : ''}`}
+                                                                className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-[3px] cursor-crosshair hover:scale-150 hover:z-20 transition-all ${colorClass}`}
+                                                            ></div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-end mt-6">
+                                                <div>
+                                                    <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Dias no Ciclo</p>
+                                                    <p className="text-3xl font-black text-slate-800 dark:text-white leading-none mt-1 transition-colors duration-500">{currentDayNumber}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Sessões Ativas</p>
+                                                    <p className="text-3xl font-black text-blue-600 dark:text-neon leading-none mt-1 transition-colors duration-500">{metrics.diasEstudados}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Gráfico de Barras de Horas (Últimos 7 dias) */}
+                                    <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500">
+                                        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
+                                            <Icon name="BarChart" size={16} /> Horas (Últimos 7 dias)
+                                        </h3>
+                                        
+                                        <div className="flex items-end justify-between h-32 gap-3 mt-4 px-2">
+                                            {last7DaysHours.map((d, i) => {
+                                                const height = maxHours > 0 ? (d.hours / maxHours) * 100 : 0;
+                                                return (
+                                                    <div key={i} className="flex flex-col items-center gap-2 flex-1 group h-full">
+                                                        <div className="w-full max-w-[24px] relative flex items-end justify-center h-full bg-slate-50 dark:bg-darkbg rounded-t-lg transition-colors duration-500">
+                                                            <div 
+                                                                className="w-full bg-blue-500 dark:bg-neon rounded-t-md transition-all duration-700 ease-out group-hover:opacity-80"
+                                                                style={{ height: `${height}%`, minHeight: d.hours > 0 ? '4px' : '0' }}
+                                                            ></div>
+                                                            <span className="absolute -top-6 text-[10px] font-bold text-slate-700 dark:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                {d.hours.toFixed(1)}h
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase">{d.label}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        
+                                        <div className="mt-8 pt-5 border-t border-slate-100 dark:border-darkborder transition-colors duration-500 flex items-center justify-between">
+                                            <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Total Acumulado</p>
+                                            <p className="text-2xl font-black text-slate-800 dark:text-white transition-colors duration-500">{formatTimeString(metrics.totalSeconds)}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -742,9 +817,9 @@
                             <div className="space-y-8 animate-fade-in">
                                 <div className="flex bg-white dark:bg-darkcard p-1.5 rounded-2xl shadow-sm dark:shadow-lg border border-slate-200 dark:border-darkborder w-fit mx-auto md:mx-0 overflow-x-auto max-w-full transition-colors duration-500">
                                     {[
-                                        { id: 'dias', label: 'Matriz (Dias)', icon: 'Calendar' },
-                                        { id: 'horas', label: 'Horas', icon: 'Clock' },
-                                        { id: 'desempenho', label: 'Matérias', icon: 'Target' }
+                                        { id: 'dias', label: 'Matriz Completa', icon: 'Calendar' },
+                                        { id: 'horas', label: 'Histórico', icon: 'Clock' },
+                                        { id: 'desempenho', label: 'Desempenho', icon: 'Target' }
                                     ].map(sub => (
                                         <button key={sub.id} onClick={() => setDashSubTab(sub.id)} className={`flex items-center whitespace-nowrap gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase transition-all duration-300 ${dashSubTab === sub.id ? 'bg-blue-600 text-white dark:bg-neon dark:text-black shadow-md dark:shadow-[0_0_15px_rgba(0,255,136,0.3)]' : 'text-slate-500 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon hover:bg-slate-50 dark:hover:bg-[#111]'}`}>
                                             <Icon name={sub.icon} size={14} /> {sub.label}
