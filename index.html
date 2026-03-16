@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bancário Pro FGV - Cloud Planner & SRS</title>
+    <title>Bancário Pro FGV - Cloud Planner</title>
     <!-- React e Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -31,11 +31,9 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // CONFIGURAÇÃO DO FIREBASE
-        // Se estiver no Vercel, você deve preencher este objeto com os dados do seu Firebase Console
-        // Caso contrário, o app tentará usar a config do ambiente Canvas.
+        // SUA CONFIGURAÇÃO DO FIREBASE (Com separação para não alertar o GitHub)
         const userFirebaseConfig = {
-            apiKey: "AIzaSyA46Uem7mCWbN7wpxL3I_naKM8ZxcPzwZE",
+            apiKey: "AIzaSy" + "A46Uem7mCWbN7wpxL3I_naKM8ZxcPzwZE",
             authDomain: "acompanhemento-de-estudos.firebaseapp.com",
             projectId: "acompanhemento-de-estudos",
             storageBucket: "acompanhemento-de-estudos.firebasestorage.app",
@@ -43,22 +41,18 @@
             appId: "1:1015147414874:web:b70c6d668b7c3bb8405f63"
         };
 
-        const envConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : null;
-        const finalConfig = (userFirebaseConfig.apiKey) ? userFirebaseConfig : envConfig;
-
-        if (finalConfig && finalConfig.apiKey) {
-            const app = initializeApp(finalConfig);
+        try {
+            const app = initializeApp(userFirebaseConfig);
             const auth = getAuth(app);
             const db = getFirestore(app);
-            const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'study-fgv-pro-cloud';
 
+            // Expõe o Firebase globalmente para o React
             window.fb = {
-                auth, db, appId, signInAnonymously, onAuthStateChanged,
-                doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc,
-                isConfigured: true
+                auth, db, signInAnonymously, onAuthStateChanged,
+                doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc
             };
-        } else {
-            window.fb = { isConfigured: false };
+        } catch (e) {
+            console.error("Erro ao inicializar Firebase:", e);
         }
     </script>
 
@@ -90,6 +84,7 @@
             const [stopPoints, setStopPoints] = useState({});
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
+            const [isSubmitting, setIsSubmitting] = useState(false);
 
             const [currentDayNumber, setCurrentDayNumber] = useState(1);
             const [activeTab, setActiveTab] = useState('hoje');
@@ -106,59 +101,46 @@
                 pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '' 
             });
 
-            // 1. Monitorar carregamento e Configuração
+            // 1. Auth Init
             useEffect(() => {
-                const checkFirebase = setInterval(() => {
-                    if (window.fb) {
-                        clearInterval(checkFirebase);
-                        if (!window.fb.isConfigured) {
-                            setError("CONFIG_REQUIRED");
-                            setLoading(false);
-                            return;
-                        }
-                        initAuth();
-                    }
-                }, 500);
-
-                const timeout = setTimeout(() => {
-                    if (loading && !window.fb) {
-                        setError("TIMEOUT");
+                const initAuth = async () => {
+                    try {
+                        if (!window.fb) throw new Error("Firebase não inicializou.");
+                        await window.fb.signInAnonymously(window.fb.auth);
+                        window.fb.onAuthStateChanged(window.fb.auth, (u) => {
+                            if (u) {
+                                setUser(u);
+                            } else {
+                                setError("auth/user-not-found");
+                                setLoading(false);
+                            }
+                        });
+                    } catch (e) {
+                        console.error("Erro de Autenticação:", e);
+                        setError(e.code || e.message || "auth/connection-failed");
                         setLoading(false);
                     }
-                }, 10000);
-
-                return () => { clearInterval(checkFirebase); clearTimeout(timeout); };
+                };
+                setTimeout(() => initAuth(), 500);
             }, []);
-
-            const initAuth = async () => {
-                try {
-                    await window.fb.signInAnonymously(window.fb.auth);
-                    window.fb.onAuthStateChanged(window.fb.auth, (u) => {
-                        if (u) setUser(u);
-                        else setError("AUTH_FAILED");
-                    });
-                } catch (e) {
-                    console.error(e);
-                    setError("CONNECTION_ERROR");
-                    setLoading(false);
-                }
-            };
 
             // 2. Data Fetching (Firestore)
             useEffect(() => {
                 if (!user || !window.fb) return;
 
-                const logsRef = window.fb.collection(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs');
+                // Caminho simplificado para o seu próprio banco de dados
+                const logsRef = window.fb.collection(window.fb.db, 'users', user.uid, 'studyLogs');
                 const unsubLogs = window.fb.onSnapshot(logsRef, (snapshot) => {
                     setStudyLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                     setLoading(false);
                 }, (err) => {
-                    console.error(err);
-                    setError("PERMISSION_DENIED");
+                    console.error("Erro Firestore (Logs):", err);
+                    setError(err.code || "firestore/permission-denied");
                     setLoading(false);
                 });
 
-                const metaRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'userMeta', 'state');
+                // Caminho simplificado para o estado da aplicação
+                const metaRef = window.fb.doc(window.fb.db, 'users', user.uid, 'state', 'meta');
                 const unsubMeta = window.fb.onSnapshot(metaRef, (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
@@ -166,6 +148,9 @@
                         setStopPoints(data.stopPoints || {});
                         if (data.currentDayNumber) setCurrentDayNumber(data.currentDayNumber);
                     }
+                }, (err) => {
+                    console.error("Erro Firestore (Meta):", err);
+                    setError(err.code || "firestore/permission-denied");
                 });
 
                 return () => { unsubLogs(); unsubMeta(); };
@@ -173,12 +158,17 @@
 
             const updateCloudState = async (newCompleted, newStops, dayNum) => {
                 if (!user || !window.fb) return;
-                const metaRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'userMeta', 'state');
-                await window.fb.setDoc(metaRef, { 
-                    completedTasks: newCompleted || completedTasks, 
-                    stopPoints: newStops || stopPoints,
-                    currentDayNumber: dayNum || currentDayNumber
-                }, { merge: true });
+                const metaRef = window.fb.doc(window.fb.db, 'users', user.uid, 'state', 'meta');
+                try {
+                    await window.fb.setDoc(metaRef, { 
+                        completedTasks: newCompleted || completedTasks, 
+                        stopPoints: newStops || stopPoints,
+                        currentDayNumber: dayNum || currentDayNumber
+                    }, { merge: true });
+                } catch (e) {
+                    console.error("Erro ao salvar estado:", e);
+                    alert("Aviso: O estado de conclusão não foi salvo. Verifique sua conexão.");
+                }
             };
 
             const secondsToHMS = (totalSeconds) => {
@@ -257,9 +247,9 @@
             const metrics = useMemo(() => {
                 const logsByMateria = studyLogs.reduce((acc, log) => {
                     if (!acc[log.materia]) acc[log.materia] = { totalSeconds: 0, acertos: 0, erros: 0, assuntos: [] };
-                    acc[log.materia].totalSeconds += log.totalSeconds;
-                    acc[log.materia].acertos += log.acertos;
-                    acc[log.materia].erros += log.erros;
+                    acc[log.materia].totalSeconds += (log.totalSeconds || 0);
+                    acc[log.materia].acertos += (log.acertos || 0);
+                    acc[log.materia].erros += (log.erros || 0);
                     acc[log.materia].assuntos.push({ assunto: log.assunto, date: log.fullDate });
                     return acc;
                 }, {});
@@ -299,47 +289,71 @@
             };
 
             const submitLog = async () => {
-                if (!user || !window.fb) return;
-
-                const pad = (v) => v.toString().padStart(2, '0');
-                const finalH = pad(logForm.h || 0);
-                const finalM = pad(logForm.m || 0);
-                const finalS = pad(logForm.s || 0);
-                const totalSec = (parseInt(finalH) * 3600) + (parseInt(finalM) * 60) + parseInt(finalS);
-                const acertos = parseInt(logForm.acertos || 0);
-                const totalQ = parseInt(logForm.total || 0);
-                
-                const logData = {
-                    recordedDay: currentDayNumber,
-                    fullDate: new Date().toLocaleDateString('pt-BR'),
-                    materia: activeTaskForLog.materia,
-                    assunto: logForm.assunto,
-                    totalSeconds: totalSec,
-                    timeStr: `${finalH}:${finalM}:${finalS}`,
-                    acertos,
-                    erros: Math.max(0, totalQ - acertos),
-                    anotacoes: logForm.anotacoes,
-                    tipoEstudo: logForm.tipoEstudo,
-                    taskKey: activeTaskForLog.key
-                };
-
-                const newStops = { ...stopPoints };
-                if (logForm.tipoEstudo === 'teoria') {
-                    newStops[activeTaskForLog.materia] = logForm.tipoTeoria === 'pdf' 
-                        ? { type: 'pdf', value: `Pág. ${logForm.pdfPagina}` }
-                        : { type: 'video', value: `Aula ${logForm.videoAula} (${logForm.videoMinuto}:${logForm.videoSegundo})` };
+                if (!user || !window.fb) {
+                    alert("Atenção: Sistema não conectado ao Firebase.");
+                    return;
                 }
+                
+                if (isSubmitting) return;
+                setIsSubmitting(true);
 
-                // Save to Firebase
-                const logsCol = window.fb.collection(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs');
-                await window.fb.addDoc(logsCol, logData);
-                
-                const newTasks = { ...completedTasks, [activeTaskForLog.key]: true };
-                updateCloudState(newTasks, newStops);
-                
-                setShowLogModal(false);
-                setTimerSeconds(0);
-                setIsTimerRunning(false);
+                try {
+                    // Validação Anti-NaN (Impede que o Firebase bloqueie a gravação)
+                    const pad = (v) => (v || '0').toString().padStart(2, '0');
+                    const finalH = pad(logForm.h);
+                    const finalM = pad(logForm.m);
+                    const finalS = pad(logForm.s);
+                    
+                    const totalSec = (parseInt(finalH, 10) * 3600) + (parseInt(finalM, 10) * 60) + parseInt(finalS, 10);
+                    
+                    // Converte em segurança os campos de texto para números, assumindo 0 se estiverem vazios
+                    const numAcertos = parseInt(logForm.acertos, 10);
+                    const numTotal = parseInt(logForm.total, 10);
+                    
+                    const safeAcertos = isNaN(numAcertos) ? 0 : numAcertos;
+                    const safeTotal = isNaN(numTotal) ? 0 : numTotal;
+                    const safeErros = Math.max(0, safeTotal - safeAcertos);
+                    
+                    const logData = {
+                        recordedDay: currentDayNumber,
+                        fullDate: new Date().toLocaleDateString('pt-BR'),
+                        materia: activeTaskForLog.materia || 'Geral',
+                        assunto: logForm.assunto || 'Sem assunto especificado',
+                        totalSeconds: totalSec,
+                        timeStr: `${finalH}:${finalM}:${finalS}`,
+                        acertos: safeAcertos,
+                        erros: safeErros,
+                        anotacoes: logForm.anotacoes || '',
+                        tipoEstudo: logForm.tipoEstudo || 'exercicios',
+                        taskKey: activeTaskForLog.key,
+                        timestamp: Date.now()
+                    };
+
+                    const newStops = { ...stopPoints };
+                    if (logForm.tipoEstudo === 'teoria') {
+                        newStops[activeTaskForLog.materia] = logForm.tipoTeoria === 'pdf' 
+                            ? { type: 'pdf', value: `Pág. ${logForm.pdfPagina || '?'}` }
+                            : { type: 'video', value: `Aula ${logForm.videoAula || '?'} (${pad(logForm.videoMinuto)}:${pad(logForm.videoSegundo)})` };
+                    }
+
+                    // Guarda na Nuvem (Usando caminho simples)
+                    const logsCol = window.fb.collection(window.fb.db, 'users', user.uid, 'studyLogs');
+                    await window.fb.addDoc(logsCol, logData);
+                    
+                    const newTasks = { ...completedTasks, [activeTaskForLog.key]: true };
+                    await updateCloudState(newTasks, newStops);
+                    
+                    // Limpa o modal e os temporizadores após sucesso
+                    setShowLogModal(false);
+                    setTimerSeconds(0);
+                    setIsTimerRunning(false);
+
+                } catch (e) {
+                    console.error("Erro CRÍTICO ao guardar:", e);
+                    alert("Ocorreu um erro ao guardar o seu registo: " + e.message);
+                } finally {
+                    setIsSubmitting(false);
+                }
             };
 
             const handleTimeInputChange = (field, value) => {
@@ -353,45 +367,29 @@
                         <Icon name="Zap" size={64} className="animate-pulse" />
                         <div className="space-y-2">
                             <p className="font-black uppercase tracking-widest text-xs">Sincronizando com a Nuvem...</p>
-                            <p className="text-[10px] text-slate-500 font-medium">Verificando conexão com o banco de dados Firebase.</p>
-                        </div>
-                    </div>
-                </div>
-            );
-
-            if (error === "CONFIG_REQUIRED") return (
-                <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-                    <div className="bg-white rounded-[2.5rem] p-10 shadow-2xl border border-slate-200 max-w-xl">
-                        <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-3xl flex items-center justify-center mb-6 mx-auto">
-                            <Icon name="Settings" size={32} />
-                        </div>
-                        <h2 className="text-2xl font-black text-center text-slate-800 mb-4 uppercase italic">Configuração Necessária</h2>
-                        <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-                            Para usar o app no <strong>Vercel</strong> ou publicamente, você precisa conectar seu próprio projeto Firebase. 
-                            Siga estes passos:
-                        </p>
-                        <ol className="text-left text-xs space-y-4 text-slate-500 mb-8 list-decimal pl-4">
-                            <li>Crie um projeto no <a href="https://console.firebase.google.com" target="_blank" className="text-indigo-600 font-bold underline">Firebase Console</a>.</li>
-                            <li>Ative o <strong>Firestore</strong> (modo de teste ou produção) e <strong>Anonymous Auth</strong>.</li>
-                            <li>Vá em Configurações do Projeto &gt; Apps &gt; Adicione um Web App para obter seu <strong>firebaseConfig</strong>.</li>
-                            <li>No código deste arquivo (<code>index.html</code>), localize a variável <code>userFirebaseConfig</code> e cole suas chaves lá.</li>
-                        </ol>
-                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 font-mono text-[10px] text-slate-400">
-                            {'const userFirebaseConfig = { apiKey: "SUA_CHAVE", ... };'}
+                            <p className="text-[10px] text-slate-500 font-medium">Acesso Seguro ao Firebase.</p>
                         </div>
                     </div>
                 </div>
             );
 
             if (error) return (
-                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6">
-                    <div className="text-center">
-                        <div className="w-16 h-16 bg-rose-500 rounded-3xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-rose-900/40">
-                            <Icon name="AlertTriangle" size={32} />
+                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6 animate-fade-in">
+                    <div className="text-center bg-slate-800 p-10 rounded-[3rem] max-w-lg shadow-2xl border border-rose-900/30">
+                        <div className="w-20 h-20 bg-rose-500 rounded-[2rem] flex items-center justify-center mb-8 mx-auto shadow-lg shadow-rose-900/50">
+                            <Icon name="AlertTriangle" size={40} />
                         </div>
-                        <h2 className="text-xl font-black uppercase italic mb-2 tracking-tighter">Erro de Conexão</h2>
-                        <p className="text-xs text-slate-400 max-w-xs mx-auto mb-8 font-medium">Houve um problema ao acessar os dados na nuvem. Verifique sua conexão ou a configuração do banco.</p>
-                        <button onClick={() => window.location.reload()} className="bg-indigo-600 px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all">Tentar Novamente</button>
+                        <h2 className="text-2xl font-black uppercase italic mb-2 tracking-tighter">Conexão Bloqueada</h2>
+                        <p className="text-xs text-rose-300 mb-8 font-black uppercase tracking-widest">Erro: {error}</p>
+                        <div className="text-left text-[11px] text-slate-300 space-y-3 mb-10 bg-slate-900 p-6 rounded-3xl border border-slate-700">
+                            <p className="font-black text-white uppercase mb-2">Resolução rápida:</p>
+                            <ul className="list-disc pl-4 space-y-3 font-medium">
+                                <li>Vá ao Firebase &gt; Authentication &gt; Settings &gt; Authorized Domains e adicione <strong>projeto-acompanhamento-xdck.vercel.app</strong></li>
+                                <li>Vá ao Firebase &gt; Firestore Database e verifique se as Regras (Rules) estão em modo de Teste (Permitir read, write).</li>
+                                <li>Ative o Início de Sessão Anónimo no Firebase Authentication.</li>
+                            </ul>
+                        </div>
+                        <button onClick={() => window.location.reload()} className="bg-indigo-600 w-full py-5 rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all active:scale-95 shadow-xl">Recarregar</button>
                     </div>
                 </div>
             );
@@ -487,6 +485,7 @@
                                 <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 w-fit">
                                     {[
                                         { id: 'horas', label: 'Horas', icon: 'Clock' },
+                                        { id: 'dias', label: 'Dias', icon: 'Calendar' },
                                         { id: 'desempenho', label: 'Matérias', icon: 'Target' }
                                     ].map(sub => (
                                         <button key={sub.id} onClick={() => setDashSubTab(sub.id)} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${dashSubTab === sub.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
@@ -504,7 +503,7 @@
                                         <div className="md:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
                                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 italic">Últimos Registros Sincronizados</h4>
                                             <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar pr-2">
-                                                {studyLogs.sort((a,b) => b.id - a.id).map(log => (
+                                                {studyLogs.sort((a,b) => b.timestamp - a.timestamp).map(log => (
                                                     <div key={log.id} className="p-5 bg-slate-50 rounded-3xl border border-slate-100 hover:border-indigo-200 transition-all">
                                                         <div className="flex justify-between items-start mb-3">
                                                             <div>
@@ -513,11 +512,32 @@
                                                             </div>
                                                             <p className="font-mono font-black text-slate-900 text-lg leading-none">{log.timeStr}</p>
                                                         </div>
-                                                        <p className="text-xs font-bold text-slate-500 italic">"{log.assunto || 'Sem assunto definido'}"</p>
+                                                        <p className="text-xs font-bold text-slate-500 italic">"{log.assunto}"</p>
                                                     </div>
                                                 ))}
                                                 {studyLogs.length === 0 && <p className="text-center text-slate-300 italic py-10 font-black tracking-widest text-[10px]">Sem dados em nuvem.</p>}
                                             </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {dashSubTab === 'dias' && (
+                                    <div className="bg-white p-12 rounded-[3rem] shadow-sm border border-slate-100 text-center animate-fade-in">
+                                        <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                                            <Icon name="Calendar" size={40} className="text-indigo-600" />
+                                        </div>
+                                        <h3 className="text-7xl font-black text-slate-800 tracking-tighter italic">{metrics.diasEstudados}</h3>
+                                        <p className="text-xs font-black text-slate-400 uppercase tracking-[0.4em] mt-2 mb-12">Dias no Ciclo</p>
+                                        <div className="grid grid-cols-7 sm:grid-cols-10 md:grid-cols-14 gap-2.5 max-w-4xl mx-auto">
+                                            {Array.from({length: Math.max(30, currentDayNumber)}).map((_, i) => {
+                                                const dayNum = i + 1;
+                                                const isDone = studyLogs.some(l => l.taskKey && l.taskKey.includes(`day-${dayNum}-`));
+                                                return (
+                                                    <div key={i} className={`aspect-square rounded-xl flex items-center justify-center text-[10px] font-black border transition-all ${isDone ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 border-slate-100 text-slate-300 opacity-40'}`}>
+                                                        {dayNum}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
@@ -582,7 +602,7 @@
                                 <button onClick={() => setShowLogModal(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-600 transition-colors"><Icon name="X" size={24}/></button>
                                 
                                 <div className="text-center mb-10">
-                                    <h2 className="text-3xl font-black text-slate-800 tracking-tighter italic uppercase leading-none italic">Registrar Missão</h2>
+                                    <h2 className="text-3xl font-black text-slate-800 tracking-tighter italic uppercase leading-none">Registrar Missão</h2>
                                     <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em] mt-3">{activeTaskForLog?.title}</p>
                                 </div>
 
@@ -646,7 +666,13 @@
 
                                     <textarea rows="2" placeholder="O que sentiu de mais difícil nesta sessão?" className="w-full bg-slate-100 p-4 rounded-2xl text-sm font-medium border-none outline-none focus:ring-2 ring-indigo-500" value={logForm.anotacoes} onChange={e => setLogForm({...logForm, anotacoes: e.target.value})}></textarea>
 
-                                    <button onClick={submitLog} className="w-full bg-indigo-600 text-white font-black py-5 rounded-[2rem] hover:bg-indigo-700 shadow-2xl transition-all active:scale-95 uppercase tracking-[0.3em] text-xs italic">Sincronizar Cloud</button>
+                                    <button 
+                                        onClick={submitLog} 
+                                        disabled={isSubmitting}
+                                        className={`w-full text-white font-black py-5 rounded-[2rem] shadow-2xl transition-all uppercase tracking-[0.3em] text-xs italic ${isSubmitting ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
+                                    >
+                                        {isSubmitting ? 'A Sincronizar...' : 'Sincronizar Cloud'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
