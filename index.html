@@ -12,10 +12,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Core -->
     <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.js"></script>
-    <!-- Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js" type="module"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js" type="module"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js" type="module"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
@@ -29,34 +25,41 @@
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
 
+    <!-- Firebase SDKs via CDN -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase Configuration
-        const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'study-fgv-pro-cloud';
-
-        // Expor funções e instâncias para o escopo global de forma organizada
-        window.fb = {
-            auth,
-            db,
-            appId,
-            signInAnonymously,
-            onAuthStateChanged,
-            doc,
-            setDoc,
-            getDoc,
-            collection,
-            onSnapshot,
-            query,
-            where,
-            addDoc
+        // CONFIGURAÇÃO DO FIREBASE
+        // Se estiver no Vercel, você deve preencher este objeto com os dados do seu Firebase Console
+        // Caso contrário, o app tentará usar a config do ambiente Canvas.
+        const userFirebaseConfig = {
+            apiKey: "",
+            authDomain: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: ""
         };
+
+        const envConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : null;
+        const finalConfig = (userFirebaseConfig.apiKey) ? userFirebaseConfig : envConfig;
+
+        if (finalConfig && finalConfig.apiKey) {
+            const app = initializeApp(finalConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+            const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'study-fgv-pro-cloud';
+
+            window.fb = {
+                auth, db, appId, signInAnonymously, onAuthStateChanged,
+                doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc,
+                isConfigured: true
+            };
+        } else {
+            window.fb = { isConfigured: false };
+        }
     </script>
 
     <script type="text/babel">
@@ -86,6 +89,7 @@
             const [completedTasks, setCompletedTasks] = useState({});
             const [stopPoints, setStopPoints] = useState({});
             const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
 
             const [currentDayNumber, setCurrentDayNumber] = useState(1);
             const [activeTab, setActiveTab] = useState('hoje');
@@ -102,20 +106,43 @@
                 pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '' 
             });
 
-            // 1. Auth Init
+            // 1. Monitorar carregamento e Configuração
             useEffect(() => {
-                const initAuth = async () => {
-                    try {
-                        if (window.fb) {
-                            await window.fb.signInAnonymously(window.fb.auth);
-                            window.fb.onAuthStateChanged(window.fb.auth, (u) => {
-                                setUser(u);
-                            });
+                const checkFirebase = setInterval(() => {
+                    if (window.fb) {
+                        clearInterval(checkFirebase);
+                        if (!window.fb.isConfigured) {
+                            setError("CONFIG_REQUIRED");
+                            setLoading(false);
+                            return;
                         }
-                    } catch (e) { console.error("Auth Error", e); }
-                };
-                initAuth();
+                        initAuth();
+                    }
+                }, 500);
+
+                const timeout = setTimeout(() => {
+                    if (loading && !window.fb) {
+                        setError("TIMEOUT");
+                        setLoading(false);
+                    }
+                }, 10000);
+
+                return () => { clearInterval(checkFirebase); clearTimeout(timeout); };
             }, []);
+
+            const initAuth = async () => {
+                try {
+                    await window.fb.signInAnonymously(window.fb.auth);
+                    window.fb.onAuthStateChanged(window.fb.auth, (u) => {
+                        if (u) setUser(u);
+                        else setError("AUTH_FAILED");
+                    });
+                } catch (e) {
+                    console.error(e);
+                    setError("CONNECTION_ERROR");
+                    setLoading(false);
+                }
+            };
 
             // 2. Data Fetching (Firestore)
             useEffect(() => {
@@ -125,7 +152,11 @@
                 const unsubLogs = window.fb.onSnapshot(logsRef, (snapshot) => {
                     setStudyLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                     setLoading(false);
-                }, (err) => console.error(err));
+                }, (err) => {
+                    console.error(err);
+                    setError("PERMISSION_DENIED");
+                    setLoading(false);
+                });
 
                 const metaRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'userMeta', 'state');
                 const unsubMeta = window.fb.onSnapshot(metaRef, (docSnap) => {
@@ -317,10 +348,50 @@
             };
 
             if (loading) return (
-                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-indigo-400">
-                    <div className="flex flex-col items-center gap-4">
-                        <Icon name="Zap" size={48} className="animate-pulse" />
-                        <p className="font-black uppercase tracking-widest text-[10px]">Sincronizando com a Nuvem...</p>
+                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-indigo-400 p-8">
+                    <div className="flex flex-col items-center gap-6 text-center max-w-sm">
+                        <Icon name="Zap" size={64} className="animate-pulse" />
+                        <div className="space-y-2">
+                            <p className="font-black uppercase tracking-widest text-xs">Sincronizando com a Nuvem...</p>
+                            <p className="text-[10px] text-slate-500 font-medium">Verificando conexão com o banco de dados Firebase.</p>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            if (error === "CONFIG_REQUIRED") return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+                    <div className="bg-white rounded-[2.5rem] p-10 shadow-2xl border border-slate-200 max-w-xl">
+                        <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-3xl flex items-center justify-center mb-6 mx-auto">
+                            <Icon name="Settings" size={32} />
+                        </div>
+                        <h2 className="text-2xl font-black text-center text-slate-800 mb-4 uppercase italic">Configuração Necessária</h2>
+                        <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+                            Para usar o app no <strong>Vercel</strong> ou publicamente, você precisa conectar seu próprio projeto Firebase. 
+                            Siga estes passos:
+                        </p>
+                        <ol className="text-left text-xs space-y-4 text-slate-500 mb-8 list-decimal pl-4">
+                            <li>Crie um projeto no <a href="https://console.firebase.google.com" target="_blank" className="text-indigo-600 font-bold underline">Firebase Console</a>.</li>
+                            <li>Ative o <strong>Firestore</strong> (modo de teste ou produção) e <strong>Anonymous Auth</strong>.</li>
+                            <li>Vá em Configurações do Projeto &gt; Apps &gt; Adicione um Web App para obter seu <strong>firebaseConfig</strong>.</li>
+                            <li>No código deste arquivo (<code>index.html</code>), localize a variável <code>userFirebaseConfig</code> e cole suas chaves lá.</li>
+                        </ol>
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 font-mono text-[10px] text-slate-400">
+                            {'const userFirebaseConfig = { apiKey: "SUA_CHAVE", ... };'}
+                        </div>
+                    </div>
+                </div>
+            );
+
+            if (error) return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6">
+                    <div className="text-center">
+                        <div className="w-16 h-16 bg-rose-500 rounded-3xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-rose-900/40">
+                            <Icon name="AlertTriangle" size={32} />
+                        </div>
+                        <h2 className="text-xl font-black uppercase italic mb-2 tracking-tighter">Erro de Conexão</h2>
+                        <p className="text-xs text-slate-400 max-w-xs mx-auto mb-8 font-medium">Houve um problema ao acessar os dados na nuvem. Verifique sua conexão ou a configuração do banco.</p>
+                        <button onClick={() => window.location.reload()} className="bg-indigo-600 px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all">Tentar Novamente</button>
                     </div>
                 </div>
             );
@@ -357,18 +428,18 @@
                                                 <p className="text-sm font-bold text-indigo-600 uppercase tracking-tighter italic">{currentDayMeta.type}</p>
                                             </div>
                                             <div className="flex gap-2">
-                                                <button onClick={() => { const d = currentDayNumber > 1 ? currentDayNumber - 1 : 1; setCurrentDayNumber(d); updateCloudState(null, null, d); }} className="p-3 bg-slate-100 text-slate-400 hover:text-indigo-600 rounded-2xl transition-all active:scale-95"><Icon name="ChevronLeft"/></button>
-                                                <button onClick={() => { const d = currentDayNumber + 1; setCurrentDayNumber(d); updateCloudState(null, null, d); }} className="p-3 bg-slate-100 text-slate-400 hover:text-indigo-600 rounded-2xl transition-all active:scale-95"><Icon name="ChevronRight"/></button>
+                                                <button onClick={() => { const d = currentDayNumber > 1 ? currentDayNumber - 1 : 1; setCurrentDayNumber(d); updateCloudState(null, null, d); }} className="p-3 bg-slate-100 text-slate-400 hover:text-indigo-600 rounded-2xl active:scale-95 transition-all"><Icon name="ChevronLeft"/></button>
+                                                <button onClick={() => { const d = currentDayNumber + 1; setCurrentDayNumber(d); updateCloudState(null, null, d); }} className="p-3 bg-slate-100 text-slate-400 hover:text-indigo-600 rounded-2xl active:scale-95 transition-all"><Icon name="ChevronRight"/></button>
                                             </div>
                                         </div>
                                         
                                         <div className="space-y-4">
-                                            {currentDayTasks.map(task => {
+                                            {currentDayTasks.map((task, idx) => {
                                                 const tKey = `day-${currentDayNumber}-${task.id}`;
                                                 const lastStop = stopPoints[task.materia];
                                                 const isDone = completedTasks[tKey];
                                                 return (
-                                                    <div key={task.id} onClick={() => handleToggleTask(task)} className={`group flex items-center gap-5 p-5 rounded-[2rem] border-2 transition-all cursor-pointer ${isDone ? 'bg-emerald-50 border-emerald-100 opacity-60' : 'bg-white border-slate-50 hover:border-indigo-200 shadow-sm'}`}>
+                                                    <div key={`${tKey}-${idx}`} onClick={() => handleToggleTask(task)} className={`group flex items-center gap-5 p-5 rounded-[2rem] border-2 transition-all cursor-pointer ${isDone ? 'bg-emerald-50 border-emerald-100 opacity-60' : 'bg-white border-slate-50 hover:border-indigo-200 shadow-sm'}`}>
                                                         <div className={`p-2.5 rounded-2xl ${isDone ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-100 text-slate-300 group-hover:text-indigo-400'}`}>
                                                             <Icon name={isDone ? "Check" : "Circle"} size={26} />
                                                         </div>
@@ -379,7 +450,7 @@
                                                                 {lastStop && !isDone && (
                                                                     <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 border border-amber-100 rounded-full">
                                                                         <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse"></span>
-                                                                        <span className="text-[9px] font-black text-amber-700 uppercase tracking-tighter">Ponto de Parada: {lastStop.value}</span>
+                                                                        <span className="text-[9px] font-black text-amber-700 uppercase tracking-tighter">Parou em: {lastStop.value}</span>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -416,7 +487,6 @@
                                 <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 w-fit">
                                     {[
                                         { id: 'horas', label: 'Horas', icon: 'Clock' },
-                                        { id: 'dias', label: 'Dias', icon: 'Calendar' },
                                         { id: 'desempenho', label: 'Matérias', icon: 'Target' }
                                     ].map(sub => (
                                         <button key={sub.id} onClick={() => setDashSubTab(sub.id)} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${dashSubTab === sub.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
