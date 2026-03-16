@@ -400,13 +400,14 @@
                     acc[log.materia].assuntos.push({ assunto: log.assunto, date: log.fullDate });
                     
                     const assuntoRaw = log.assunto || 'Sem assunto definido';
-                    const assuntoKey = assuntoRaw.trim().toLowerCase();
-                    const sessionKey = `${assuntoKey}_${log.fullDate}`; // AGRUPAMENTO POR ASSUNTO E DATA
+                    // UTILIZAR O ID DA SESSÃO PARA GARANTIR QUE CADA REGISTO É INDIVIDUAL NA TABELA
+                    const sessionKey = log.id; 
 
                     if (!acc[log.materia].assuntosStats[sessionKey]) {
                         acc[log.materia].assuntosStats[sessionKey] = { 
                             displayNome: assuntoRaw.trim(), 
                             date: log.fullDate,
+                            timestamp: log.timestamp || parseInt(log.id) || 0,
                             acertos: 0, 
                             erros: 0, 
                             totalSeconds: 0
@@ -419,20 +420,13 @@
                     return acc;
                 }, {});
 
-                // Construir a lista de ÚLTIMOS TEMAS sem duplicatas visuais
+                // Construir a lista de ÚLTIMOS TEMAS (Apenas as 3 sessões mais recentes)
                 Object.keys(logsByMateria).forEach(materia => {
-                    const uniqueRecent = [];
-                    const seen = new Set();
-                    for (let i = logsByMateria[materia].assuntos.length - 1; i >= 0; i--) {
-                        const a = logsByMateria[materia].assuntos[i];
-                        const key = (a.assunto || 'Sem assunto definido').trim().toLowerCase();
-                        if (!seen.has(key)) {
-                            seen.add(key);
-                            uniqueRecent.push({ assunto: (a.assunto || 'Sem assunto definido').trim(), date: a.date });
-                            if (uniqueRecent.length === 3) break;
-                        }
-                    }
-                    logsByMateria[materia].recentAssuntos = uniqueRecent;
+                    const logsDaMateria = studyLogs.filter(l => l.materia === materia).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    logsByMateria[materia].recentAssuntos = logsDaMateria.slice(0, 3).map(l => ({
+                        assunto: (l.assunto || 'Sem assunto').trim(),
+                        date: l.fullDate
+                    }));
                 });
 
                 const intensityMap = {};
@@ -1179,7 +1173,7 @@
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody>
-                                                                        {Object.values(data.assuntosStats).sort((a,b) => parseDateStr(b.date).getTime() - parseDateStr(a.date).getTime()).map((stats, idx) => {
+                                                                        {Object.values(data.assuntosStats).sort((a,b) => b.timestamp - a.timestamp).map((stats, idx) => {
                                                                             const totalAssunto = stats.acertos + stats.erros;
                                                                             const percAssunto = totalAssunto > 0 ? ((stats.acertos / totalAssunto) * 100).toFixed(0) : 0;
                                                                             return (
