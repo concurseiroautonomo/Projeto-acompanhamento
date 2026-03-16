@@ -20,9 +20,9 @@
             theme: {
                 extend: {
                     colors: {
-                        neon: '#00ff88', // Verde Neon mais forte e brilhante
+                        neon: '#00ff88', 
                         neonhover: '#00e67a',
-                        darkbg: '#050505', // Preto profundo
+                        darkbg: '#050505', 
                         darkcard: '#0a0a0a',
                         darkborder: '#1a1a1a',
                         darkinput: '#111111'
@@ -42,7 +42,6 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
-        /* Tema Customizado Scrollbar p/ o Grid do GitHub (Responsivo ao Tema) */
         .git-scroll::-webkit-scrollbar { display: block; height: 6px; }
         .git-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 10px; transition: all 0.3s; }
         .dark .git-scroll::-webkit-scrollbar-track { background: #050505; }
@@ -51,26 +50,16 @@
         .git-scroll::-webkit-scrollbar-thumb:hover { background: #2563eb; }
         .dark .git-scroll::-webkit-scrollbar-thumb:hover { background: #00ff88; }
 
-        /* Transição global suave para o tema */
         *, *::before, *::after {
             transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, box-shadow;
             transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
             transition-duration: 300ms;
         }
 
-        /* Estilização para o input date */
-        input[type="date"]::-webkit-calendar-picker-indicator {
-            cursor: pointer;
-            opacity: 0.6;
-            transition: 0.2s;
-        }
-        input[type="date"]::-webkit-calendar-picker-indicator:hover {
-            opacity: 1;
-        }
-        .dark input[type="date"]::-webkit-calendar-picker-indicator {
-            filter: invert(1);
-        }
-        
+        input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
+        input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+        .dark input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+
         /* Renderização Markdown Básica */
         .markdown-content strong { font-weight: 900; color: inherit; }
         .dark .markdown-content strong { color: #00ff88; }
@@ -83,13 +72,11 @@
 <body class="bg-slate-50 text-slate-900 dark:bg-darkbg dark:text-gray-200 transition-colors duration-500 min-h-screen">
     <div id="root"></div>
 
-    <!-- Firebase SDKs via CDN -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // SUA CONFIGURAÇÃO DO FIREBASE
         const userFirebaseConfig = {
             apiKey: "AIzaSy" + "A46Uem7mCWbN7wpxL3I_naKM8ZxcPzwZE",
             authDomain: "acompanhemento-de-estudos.firebaseapp.com",
@@ -145,7 +132,6 @@
             return new Date(dateStr);
         };
 
-        // Função auxiliar para renderizar respostas da IA (Markdown básico)
         const renderMarkdown = (text) => {
             if (!text) return { __html: '' };
             let html = text
@@ -155,7 +141,7 @@
                 .replace(/\n/g, '<br />');
             
             html = html.replace(/^- (.*)$/gm, '<ul><li>$1</li></ul>');
-            html = html.replace(/<\/ul><ul>/g, ''); // Limpa listas adjacentes
+            html = html.replace(/<\/ul><ul>/g, ''); 
             return { __html: `<p>${html}</p>` };
         };
 
@@ -212,9 +198,7 @@
                 pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '', questaoParada: '' 
             });
 
-            // --------------------------------------------------------
             // IA TUTOR STATES
-            // --------------------------------------------------------
             const [aiLoading, setAiLoading] = useState(false);
             const [aiResponse, setAiResponse] = useState('');
             const [aiError, setAiError] = useState('');
@@ -222,14 +206,12 @@
             const [userQuestionImageBase64, setUserQuestionImageBase64] = useState(null);
             const fileInputRef = useRef(null);
 
-            // Fetch with Exponential Backoff (Conforme regras do sistema para Gemini API)
             const fetchWithBackoff = async (url, options, retries = 5, delay = 1000) => {
                 try {
                     const response = await fetch(url, options);
                     if (!response.ok) {
-                        if (response.status === 429 || response.status >= 500) {
-                            throw new Error(`Server Error: ${response.status}`);
-                        } else {
+                        if (response.status === 429 || response.status >= 500) throw new Error(`Server Error: ${response.status}`);
+                        else {
                             const errorText = await response.text();
                             throw new Error(`Bad Request: ${response.status} - ${errorText}`);
                         }
@@ -249,7 +231,6 @@
                 setAiError('');
                 setAiResponse('');
                 try {
-                    // API Key é vazia conforme as instruções do sistema, o ambiente injeta
                     const apiKey = "";
                     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
                     
@@ -289,9 +270,7 @@
                 const file = e.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
-                reader.onloadend = () => {
-                    setUserQuestionImageBase64(reader.result);
-                };
+                reader.onloadend = () => setUserQuestionImageBase64(reader.result);
                 reader.readAsDataURL(file);
             };
 
@@ -306,15 +285,11 @@
                 callGeminiAI(prompt, userQuestionImageBase64);
             };
 
-            const generateRescuePlan = (materia, assunto, tempoTotal, percentual) => {
+            const generateRescuePlan = (materia, assunto, tempoTotal, percentual, gravidade) => {
                 const tempoFormatado = formatTimeString(tempoTotal);
-                const prompt = `Estou com dificuldades em ${materia}, especificamente no assunto "${assunto}". Nas minhas últimas sessões de estudo para a FGV, dediquei um total de ${tempoFormatado} horas a este tema, mas o meu percentual de acertos está em apenas ${percentual}%. Por favor, crie um "Plano de Resgate" de 3 passos práticos para eu ultrapassar esta dificuldade, focando exatamente em como a FGV cobra este assunto e nas pegadinhas que posso estar a cair.`;
+                const prompt = `Estou com dificuldades em ${materia}, especificamente no assunto "${assunto}". Nas minhas últimas sessões de estudo para a FGV, dediquei um total de ${tempoFormatado} horas a este tema. Meu percentual de acertos está em ${percentual}%, o que é classificado no nosso sistema como um erro de nível "${gravidade}". Por favor, crie um "Plano de Resgate" de 3 passos práticos para eu ultrapassar esta dificuldade e chegar ao nível Ideal (>85%), focando exatamente em como a FGV cobra este assunto e nas pegadinhas que posso estar caindo.`;
                 callGeminiAI(prompt);
-                
-                // Rola suavemente para baixo para ver a resposta
-                setTimeout(() => {
-                    document.getElementById('ai-response-area')?.scrollIntoView({ behavior: 'smooth' });
-                }, 100);
+                setTimeout(() => document.getElementById('ai-response-area')?.scrollIntoView({ behavior: 'smooth' }), 100);
             };
 
             // 1. Auth Init & Listener
@@ -403,6 +378,14 @@
             const handleLogout = () => {
                 if (window.fb) window.fb.signOut(window.fb.auth);
                 setStudyLogs([]); setCompletedTasks({}); setStopPoints({}); setDayProfiles({}); setCurrentDayNumber(1);
+            };
+
+            const withTimeout = (promise, ms, errorMessage) => {
+                let timeoutId;
+                const timeoutPromise = new Promise((_, reject) => {
+                    timeoutId = setTimeout(() => reject(new Error(errorMessage)), ms);
+                });
+                return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
             };
 
             const updateCloudState = async (updatesPayload) => {
@@ -548,10 +531,9 @@
                     intensityMap[log.recordedDay] += (log.totalSeconds || 0);
                 });
 
-                // NOVO: Cálculo das Dificuldades (Tutor IA)
+                // NOVO: Cálculo das Dificuldades (Tutor IA) com Múltiplos Níveis
                 const weakPoints = [];
                 Object.entries(logsByMateria).forEach(([materia, data]) => {
-                    // Agrupar estatísticas puramente por assunto (independente do dia) para ver o quadro geral
                     const aggregatedAssuntos = {};
                     Object.values(data.assuntosStats).forEach(session => {
                         const key = session.displayNome.toLowerCase();
@@ -563,20 +545,51 @@
 
                     Object.values(aggregatedAssuntos).forEach(agg => {
                         const totalQ = agg.acertos + agg.erros;
-                        if (totalQ >= 5) { // Precisa de pelo menos 5 questões para estatística ser válida
+                        if (totalQ >= 5) { // Min. 5 questões
                             const perc = agg.acertos / totalQ;
-                            // Critério de dificuldade: < 65% acertos E gastou mais de 30 mins (1800s)
-                            if (perc < 0.65 && agg.totalSeconds >= 1800) {
+                            
+                            // Categorização de Desempenho de Alto Nível
+                            let gravidade = "";
+                            let colorClass = "";
+                            let bgClass = "";
+
+                            if (perc <= 0.65) { 
+                                gravidade = "Crítico"; colorClass = "text-rose-500 dark:text-rose-400"; bgClass = "bg-rose-100 dark:bg-rose-900/30 border-rose-300 dark:border-rose-700/50"; 
+                            }
+                            else if (perc <= 0.70) { 
+                                gravidade = "Grave"; colorClass = "text-orange-500 dark:text-orange-400"; bgClass = "bg-orange-100 dark:bg-orange-900/30 border-orange-300 dark:border-orange-700/50"; 
+                            }
+                            else if (perc <= 0.75) { 
+                                gravidade = "Moderado"; colorClass = "text-amber-500 dark:text-amber-400"; bgClass = "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700/50"; 
+                            }
+                            else if (perc <= 0.80) { 
+                                gravidade = "Leve"; colorClass = "text-yellow-600 dark:text-yellow-400"; bgClass = "bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700/50"; 
+                            }
+                            else if (perc <= 0.85) { 
+                                gravidade = "Mais Leve"; colorClass = "text-blue-500 dark:text-blue-400"; bgClass = "bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700/50"; 
+                            }
+                            else { 
+                                gravidade = "Ideal"; colorClass = "text-emerald-500 dark:text-neon"; bgClass = "bg-emerald-100 dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-700/50"; 
+                            }
+
+                            // Só exibir na lista da IA se for um erro (<= 85%)
+                            if (perc <= 0.85) {
                                 weakPoints.push({
                                     materia,
                                     assunto: agg.nome,
                                     precisao: Math.round(perc * 100),
-                                    tempoTotal: agg.totalSeconds
+                                    tempoTotal: agg.totalSeconds,
+                                    gravidade,
+                                    colorClass,
+                                    bgClass
                                 });
                             }
                         }
                     });
                 });
+                
+                // Ordenar do mais crítico (menor percentual) para o mais leve
+                weakPoints.sort((a, b) => a.precisao - b.precisao);
 
                 return {
                     totalSeconds: studyLogs.reduce((a, b) => a + (b.totalSeconds || 0), 0),
@@ -585,7 +598,7 @@
                     diasEstudados: new Set(studyLogs.map(l => l.fullDate)).size,
                     logsByMateria,
                     intensityMap,
-                    weakPoints // Pontos fracos injetados nas métricas
+                    weakPoints 
                 };
             }, [studyLogs]);
 
@@ -689,7 +702,10 @@
             };
 
             const submitLog = async () => {
-                if (!user || !window.fb) return alert("Atenção: Sistema não conectado ao Firebase.");
+                if (!user || !window.fb) {
+                    alert("Atenção: Sistema não conectado ao Firebase.");
+                    return;
+                }
                 if (isSubmitting) return;
                 setIsSubmitting(true);
 
@@ -729,10 +745,7 @@
                     }
 
                     const logsCol = window.fb.collection(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs');
-                    
-                    await window.fb.addDoc(logsCol, logData).catch(() => {
-                        console.warn("Log off-line salvo com sucesso, pendente sincronização.");
-                    });
+                    await withTimeout(window.fb.addDoc(logsCol, logData), 8000, "Timeout ao salvar Log no Firebase.");
                     
                     const newTasks = { ...completedTasks, [activeTaskForLog.key]: true };
                     await updateCloudState({ completedTasks: newTasks, stopPoints: newStops });
@@ -740,8 +753,9 @@
                     setShowLogModal(false);
 
                 } catch (e) {
-                    console.error("Erro ao guardar:", e);
-                    alert("Falha: " + e.message);
+                    console.error("Erro CRÍTICO ao guardar:", e);
+                    if (e.message.includes('permission') || e.code === 'permission-denied') setError("firestore/permission-denied");
+                    else alert("Falha na Sincronização: " + e.message);
                 } finally {
                     setIsSubmitting(false);
                 }
@@ -901,6 +915,7 @@
                             {/* ABA HOJE */}
                             {activeTab === 'hoje' && (
                                 <div className="space-y-8">
+                                    
                                     {!dayProfiles[currentDayNumber] ? (
                                         <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 md:p-12 shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 text-center animate-fade-in">
                                             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/5 dark:bg-neon/10 blur-[80px] rounded-full pointer-events-none transition-colors duration-500"></div>
@@ -1157,7 +1172,7 @@
                                                 <h2 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white italic">Seu Radar FGV</h2>
                                             </div>
                                             
-                                            <p className="text-xs font-bold text-slate-500 dark:text-gray-400 mb-6">A IA analisou os seus estudos e identificou estes pontos críticos (alta dedicação de tempo, mas baixa precisão).</p>
+                                            <p className="text-xs font-bold text-slate-500 dark:text-gray-400 mb-6">A IA analisou os seus estudos e identificou estes pontos de melhoria com base na precisão exigida (Alto Desempenho FGV).</p>
 
                                             {metrics.weakPoints.length === 0 ? (
                                                 <div className="p-6 bg-slate-50 dark:bg-[#111] rounded-2xl border border-slate-200 dark:border-darkborder text-center">
@@ -1165,18 +1180,18 @@
                                                     <p className="text-xs font-bold text-slate-600 dark:text-gray-300">Tudo limpo! Não detetámos dificuldades graves recentes.</p>
                                                 </div>
                                             ) : (
-                                                <div className="space-y-3">
+                                                <div className="space-y-3 max-h-[500px] overflow-y-auto git-scroll pr-2">
                                                     {metrics.weakPoints.map((weak, i) => (
                                                         <button 
                                                             key={i}
-                                                            onClick={() => generateRescuePlan(weak.materia, weak.assunto, weak.tempoTotal, weak.precisao)}
-                                                            className="w-full p-4 bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-900/30 rounded-2xl text-left hover:bg-rose-100 dark:hover:bg-rose-900/20 hover:border-rose-300 dark:hover:border-rose-500/50 transition-all active:scale-95 group"
+                                                            onClick={() => generateRescuePlan(weak.materia, weak.assunto, weak.tempoTotal, weak.precisao, weak.gravidade)}
+                                                            className={`w-full p-4 rounded-2xl text-left border transition-all active:scale-95 group ${weak.bgClass}`}
                                                         >
                                                             <div className="flex justify-between items-start mb-1">
-                                                                <span className="text-[9px] font-black uppercase text-rose-500 tracking-widest">{weak.materia}</span>
-                                                                <span className="text-[10px] font-black bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 px-2 py-0.5 rounded-md">{weak.precisao}% Acerto</span>
+                                                                <span className={`text-[9px] font-black uppercase tracking-widest ${weak.colorClass}`}>{weak.gravidade}</span>
+                                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-md bg-white/50 dark:bg-black/40 ${weak.colorClass}`}>{weak.precisao}%</span>
                                                             </div>
-                                                            <p className="text-sm font-bold text-slate-800 dark:text-rose-100 mb-2 leading-tight group-hover:text-rose-600 dark:group-hover:text-rose-300">{weak.assunto}</p>
+                                                            <p className="text-sm font-bold text-slate-800 dark:text-gray-200 mb-2 leading-tight group-hover:text-black dark:group-hover:text-white">{weak.assunto}</p>
                                                             <div className="flex items-center gap-1 text-[9px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest">
                                                                 <Icon name="Clock" size={10} /> Gastou {formatTimeString(weak.tempoTotal)}
                                                                 <span className="ml-auto text-blue-600 dark:text-neon flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">Pedir Plano <Icon name="ArrowRight" size={10} /></span>
@@ -1256,7 +1271,7 @@
                                                         />
                                                     )}
                                                     
-                                                    <p className="text-[8px] font-black text-slate-400 dark:text-gray-600 uppercase tracking-widest mt-6 pt-4 border-t border-slate-200 dark:border-darkborder text-center">Processado localmente via Gemini Flash Vision API (Gratuito)</p>
+                                                    <p className="text-[8px] font-black text-slate-400 dark:text-gray-600 uppercase tracking-widest mt-6 pt-4 border-t border-slate-200 dark:border-darkborder text-center">Processado localmente via Gemini API (Gratuito)</p>
                                                 </div>
                                             )}
                                         </div>
@@ -1460,7 +1475,187 @@
                                 )}
                             </div>
                         )}
+                        
+                        {activeTab === 'ciclo' && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
+                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder flex flex-col h-full transition-colors duration-500">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="p-2 bg-blue-100 dark:bg-neon/20 rounded-xl text-blue-600 dark:text-neon">
+                                            <Icon name="Coffee" size={20} />
+                                        </div>
+                                        <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white italic">Folga (6h)</h3>
+                                    </div>
+                                    <div className="space-y-4 flex-1">
+                                        {studyPools.folga.map(pool => (
+                                            <div key={pool.idProg} className="p-4 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2">Trilha {pool.idProg}</p>
+                                                <div className="space-y-2">
+                                                    {pool.tasks.map(t => (
+                                                        <div key={t.id} className="text-xs font-bold text-slate-600 dark:text-gray-300 flex gap-2"><div className="w-1 h-1 bg-blue-500 dark:bg-neon rounded-full mt-1.5 shrink-0"></div>{t.title}</div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder flex flex-col h-full transition-colors duration-500">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="p-2 bg-amber-100 dark:bg-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400">
+                                            <Icon name="Briefcase" size={20} />
+                                        </div>
+                                        <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white italic">Trabalho (3h)</h3>
+                                    </div>
+                                    <div className="space-y-4 flex-1">
+                                        {studyPools.trabalho.map(pool => (
+                                            <div key={pool.idProg} className="p-4 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2">Trilha {pool.idProg}</p>
+                                                <div className="space-y-2">
+                                                    {pool.tasks.map(t => (
+                                                        <div key={t.id} className="text-xs font-bold text-slate-600 dark:text-gray-300 flex gap-2"><div className="w-1 h-1 bg-amber-500 dark:bg-amber-400 rounded-full mt-1.5 shrink-0"></div>{t.title}</div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder flex flex-col h-full transition-colors duration-500">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="p-2 bg-purple-100 dark:bg-purple-500/20 rounded-xl text-purple-600 dark:text-purple-400">
+                                            <Icon name="Target" size={20} />
+                                        </div>
+                                        <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white italic">Livre / Rev</h3>
+                                    </div>
+                                    <div className="space-y-4 flex-1">
+                                        {studyPools.livre.map(pool => (
+                                            <div key={pool.idProg} className="p-4 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2">Trilha {pool.idProg}</p>
+                                                <div className="space-y-2">
+                                                    {pool.tasks.map(t => (
+                                                        <div key={t.id} className="text-xs font-bold text-slate-600 dark:text-gray-300 flex gap-2"><div className="w-1 h-1 bg-purple-500 dark:bg-purple-400 rounded-full mt-1.5 shrink-0"></div>{t.title}</div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <div className="p-4 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500 mt-4">
+                                            <p className="text-xs font-bold text-slate-600 dark:text-gray-300 text-center italic">As revisões espaçadas (1, 7, 15, 30 dias) são adicionadas automaticamente a qualquer dia, conforme o seu histórico.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </main>
+
+                    {/* Modal de Registro Cloud SRS - Adaptável ao Tema */}
+                    {showLogModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-xl animate-fade-in transition-colors duration-500">
+                            <div className="bg-white dark:bg-darkcard rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto git-scroll p-8 md:p-10 shadow-2xl relative border border-slate-200 dark:border-neon/30 transition-colors duration-500">
+                                <button onClick={() => setShowLogModal(false)} className="absolute top-8 right-8 text-slate-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon transition-colors"><Icon name="X" size={24}/></button>
+                                
+                                <div className="text-center mb-10">
+                                    <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tighter italic uppercase leading-none transition-colors duration-500">Registrar Missão</h2>
+                                    <p className="text-[10px] font-black text-blue-600 dark:text-neon uppercase tracking-[0.3em] mt-3 transition-colors duration-500">{activeTaskForLog?.title}</p>
+                                </div>
+
+                                <div className="space-y-6">
+                                    <div className="flex bg-slate-100 dark:bg-darkbg p-1.5 rounded-2xl border border-slate-200 dark:border-darkborder gap-2 transition-colors duration-500">
+                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'teoria'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'teoria' ? 'bg-white dark:bg-neon text-blue-600 dark:text-black shadow-md dark:shadow-[0_0_10px_rgba(0,255,136,0.3)]' : 'text-slate-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon'}`}>Teoria</button>
+                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'revisao'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'revisao' ? 'bg-white dark:bg-neon text-blue-600 dark:text-black shadow-md dark:shadow-[0_0_10px_rgba(0,255,136,0.3)]' : 'text-slate-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon'}`}>Revisão</button>
+                                    </div>
+
+                                    {logForm.tipoEstudo === 'teoria' && (
+                                        <div className="p-6 bg-slate-50 dark:bg-darkbg rounded-3xl space-y-6 border border-slate-200 dark:border-darkborder animate-fade-in shadow-inner transition-colors duration-500">
+                                            <div className="flex items-center gap-4 flex-wrap">
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input type="radio" className="w-4 h-4 text-blue-600 dark:text-neon bg-white dark:bg-[#111] border-slate-300 dark:border-darkborder focus:ring-blue-500 dark:focus:ring-neon focus:ring-offset-slate-50 dark:focus:ring-offset-darkbg" checked={logForm.tipoTeoria === 'pdf'} onChange={() => setLogForm({...logForm, tipoTeoria: 'pdf'})} />
+                                                    <span className="text-xs font-black uppercase text-blue-800 dark:text-neon transition-colors duration-500">PDF</span>
+                                                </label>
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input type="radio" className="w-4 h-4 text-blue-600 dark:text-neon bg-white dark:bg-[#111] border-slate-300 dark:border-darkborder focus:ring-blue-500 dark:focus:ring-neon focus:ring-offset-slate-50 dark:focus:ring-offset-darkbg" checked={logForm.tipoTeoria === 'video'} onChange={() => setLogForm({...logForm, tipoTeoria: 'video'})} />
+                                                    <span className="text-xs font-black uppercase text-blue-800 dark:text-neon transition-colors duration-500">Vídeo</span>
+                                                </label>
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input type="radio" className="w-4 h-4 text-blue-600 dark:text-neon bg-white dark:bg-[#111] border-slate-300 dark:border-darkborder focus:ring-blue-500 dark:focus:ring-neon focus:ring-offset-slate-50 dark:focus:ring-offset-darkbg" checked={logForm.tipoTeoria === 'questoes'} onChange={() => setLogForm({...logForm, tipoTeoria: 'questoes'})} />
+                                                    <span className="text-xs font-black uppercase text-blue-800 dark:text-neon transition-colors duration-500">Qts.</span>
+                                                </label>
+                                            </div>
+                                            {logForm.tipoTeoria === 'pdf' ? (
+                                                <input type="number" placeholder="Em qual página parou?" className="w-full bg-white dark:bg-[#111] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-2xl text-sm font-black outline-none border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-colors duration-300" value={logForm.pdfPagina} onChange={e => setLogForm({...logForm, pdfPagina: e.target.value})} />
+                                            ) : logForm.tipoTeoria === 'video' ? (
+                                                <div className="space-y-4">
+                                                    <input type="text" placeholder="Nº da Aula (ex: Aula 05)" className="w-full bg-white dark:bg-[#111] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-2xl text-sm font-black outline-none border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-colors duration-300" value={logForm.videoAula} onChange={e => setLogForm({...logForm, videoAula: e.target.value})} />
+                                                    <div className="flex gap-2 items-center">
+                                                        <input type="text" maxLength="2" placeholder="Min" className="w-full bg-white dark:bg-[#111] text-blue-600 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-xl text-center font-mono font-bold border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.videoMinuto} onChange={e => handleTimeInputChange('videoMinuto', e.target.value)} />
+                                                        <span className="font-bold text-slate-400 dark:text-gray-600">:</span>
+                                                        <input type="text" maxLength="2" placeholder="Seg" className="w-full bg-white dark:bg-[#111] text-blue-600 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-xl text-center font-mono font-bold border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.videoSegundo} onChange={e => handleTimeInputChange('videoSegundo', e.target.value)} />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <input type="text" placeholder="Qual lista ou questão parou?" className="w-full bg-white dark:bg-[#111] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-2xl text-sm font-black outline-none border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-colors duration-300" value={logForm.questaoParada} onChange={e => setLogForm({...logForm, questaoParada: e.target.value})} />
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 italic transition-colors duration-500">Assunto Estudado</label>
+                                        <input type="text" placeholder="Ex: Crase FGV" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-blue-600 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-2xl text-sm font-black italic outline-none focus:border-blue-500 dark:focus:border-neon transition-colors duration-300" value={logForm.assunto} onChange={e => setLogForm({...logForm, assunto: e.target.value})} />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 italic transition-colors duration-500">Tempo Gasto</label>
+                                            <div className="flex gap-2 items-center">
+                                                <input type="text" maxLength="2" placeholder="HH" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-xl text-center font-mono font-bold focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.h} onChange={e => handleTimeInputChange('h', e.target.value)} />
+                                                <span className="font-bold text-slate-400 dark:text-gray-600">:</span>
+                                                <input type="text" maxLength="2" placeholder="MM" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-xl text-center font-mono font-bold focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.m} onChange={e => handleTimeInputChange('m', e.target.value)} />
+                                                <span className="font-bold text-slate-400 dark:text-gray-600">:</span>
+                                                <input type="text" maxLength="2" placeholder="SS" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-xl text-center font-mono font-bold focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.s} onChange={e => handleTimeInputChange('s', e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 italic transition-colors duration-500">Exercícios</label>
+                                            <div className="flex gap-3">
+                                                <input type="number" placeholder="Total" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-xl text-sm font-black focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.total} onChange={e => setLogForm({...logForm, total: e.target.value})} />
+                                                <input type="number" placeholder="Acertos" className="w-full bg-emerald-50 dark:bg-neon/10 border border-emerald-200 dark:border-neon/30 text-emerald-600 dark:text-neon placeholder-emerald-300 dark:placeholder-emerald-800 p-4 rounded-xl text-sm font-black focus:border-emerald-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.acertos} onChange={e => setLogForm({...logForm, acertos: e.target.value})} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <textarea rows="2" placeholder="O que sentiu de mais difícil nesta sessão?" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-700 dark:text-gray-300 placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-2xl text-sm font-medium outline-none focus:border-blue-500 dark:focus:border-neon git-scroll transition-colors duration-300" value={logForm.anotacoes} onChange={e => setLogForm({...logForm, anotacoes: e.target.value})}></textarea>
+
+                                    <button 
+                                        onClick={submitLog} 
+                                        disabled={isSubmitting}
+                                        className={`w-full font-black py-5 rounded-[2rem] shadow-lg transition-all uppercase tracking-[0.3em] text-xs italic ${isSubmitting ? 'bg-slate-300 dark:bg-emerald-900 text-slate-500 dark:text-emerald-700 cursor-not-allowed' : 'bg-blue-600 dark:bg-neon text-white dark:text-black hover:bg-blue-700 dark:hover:bg-neonhover hover:shadow-xl dark:hover:shadow-[0_0_20px_#10b981] active:scale-95'}`}
+                                    >
+                                        {isSubmitting ? 'A Sincronizar...' : 'Sincronizar Cloud'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Footer Stats Cloud Dinâmico */}
+                    {!showLogModal && (
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl text-slate-900 dark:text-white px-8 py-4 rounded-[2rem] shadow-2xl dark:shadow-[0_0_30px_rgba(0,0,0,0.8)] flex items-center gap-10 border border-slate-200 dark:border-neon/30 z-50 animate-fade-in transition-colors duration-500">
+                            <div className="flex items-center gap-3">
+                                <div className="p-1.5 bg-blue-100 dark:bg-neon/20 rounded-lg text-blue-600 dark:text-neon border border-blue-200 dark:border-neon/50 shadow-sm dark:shadow-[0_0_10px_rgba(0,255,136,0.2)] transition-colors duration-500"><Icon name="Trophy" size={16}/></div>
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-black leading-none italic text-slate-800 dark:text-white drop-shadow-sm dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.5)] transition-colors duration-500">{((metrics.totalAcertos / (metrics.totalAcertos + metrics.totalErros || 1)) * 100).toFixed(1)}%</span>
+                                    <span className="text-[8px] font-black uppercase text-blue-600 dark:text-neon tracking-[0.2em] mt-0.5 transition-colors duration-500">Precisão Cloud</span>
+                                </div>
+                            </div>
+                            <div className="w-px h-8 bg-slate-200 dark:bg-gray-700 transition-colors duration-500"></div>
+                            <div className="flex items-center gap-3">
+                                <div className="p-1.5 bg-blue-100 dark:bg-neon/20 rounded-lg text-blue-600 dark:text-neon border border-blue-200 dark:border-neon/50 shadow-sm dark:shadow-[0_0_10px_rgba(0,255,136,0.2)] transition-colors duration-500"><Icon name="Target" size={16}/></div>
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-black leading-none italic tabular-nums text-slate-800 dark:text-white drop-shadow-sm dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.5)] transition-colors duration-500">{formatTimeString(metrics.totalSeconds)}</span>
+                                    <span className="text-[8px] font-black uppercase text-blue-600 dark:text-neon tracking-[0.2em] mt-0.5 transition-colors duration-500">Horas Master</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
