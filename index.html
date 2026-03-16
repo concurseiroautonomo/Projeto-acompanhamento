@@ -165,7 +165,7 @@
             const [studyLogs, setStudyLogs] = useState([]);
             const [completedTasks, setCompletedTasks] = useState({});
             const [stopPoints, setStopPoints] = useState({});
-            const [dayProfiles, setDayProfiles] = useState({}); // NOVO: Armazena o perfil escolhido para cada dia
+            const [dayProfiles, setDayProfiles] = useState({});
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             const [isSubmitting, setIsSubmitting] = useState(false);
@@ -173,10 +173,12 @@
             const [currentDayNumber, setCurrentDayNumber] = useState(1);
             const [activeTab, setActiveTab] = useState('hoje');
             const [dashSubTab, setDashSubTab] = useState('dias');
-            const [expandedMateria, setExpandedMateria] = useState(null); // Para o detalhamento de desempenho
+            const [expandedMateria, setExpandedMateria] = useState(null); 
             
+            // FILTROS DASHBOARD QUESTÕES
             const [questionsFilter, setQuestionsFilter] = useState('7');
             const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
+            const [subjectFilter, setSubjectFilter] = useState('Todas'); // NOVO FILTRO DE DISCIPLINA
             
             const [timerSeconds, setTimerSeconds] = useState(0);
             const [isTimerRunning, setIsTimerRunning] = useState(false);
@@ -184,7 +186,7 @@
             const [showLogModal, setShowLogModal] = useState(false);
             const [activeTaskForLog, setActiveTaskForLog] = useState(null);
             const [logForm, setLogForm] = useState({ 
-                assunto: '', h: '', m: '', s: '', // Alterado para strings vazias para não exigir apagar '00'
+                assunto: '', h: '', m: '', s: '', 
                 total: '', acertos: '', anotacoes: '', 
                 tipoEstudo: 'teoria', tipoTeoria: 'pdf', 
                 pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '', questaoParada: '' 
@@ -314,22 +316,34 @@
                 return `${h}:${m}:${sec}`;
             };
 
-            // TRILHAS DE PROGRESSÃO
+            // TRILHAS DE PROGRESSÃO RESTRUTURADAS (Sem Matemática pesada no Trabalho)
             const studyPools = {
                 folga: [
-                    { type: "Folga", idProg: 1, hours: 6, tasks: [{ id: "ma", title: "Português", cat: "Estudo", materia: "Português" }, { id: "mb", title: "Conhecimentos Bancários", cat: "Estudo", materia: "Conhecimentos Bancários" }], tips: "Foco total na intenção comunicativa do autor na FGV." },
-                    { type: "Folga", idProg: 2, hours: 6, tasks: [{ id: "md", title: "Vendas e Negociação", cat: "Estudo", materia: "Vendas e Negociação" }, { id: "me", title: "Informática", cat: "Estudo", materia: "Informática" }], tips: "Informática: Revise atalhos e ferramentas Office." },
-                    { type: "Folga", idProg: 3, hours: 6, tasks: [{ id: "ma_av", title: "Português (Avanço)", cat: "Avanço", materia: "Português" }, { id: "mb_av", title: "Conhec. Bancários (Avanço)", cat: "Avanço", materia: "Conhecimentos Bancários" }], tips: "Bancários: Muita atenção às atualizações do Open Finance." }
+                    { type: "Folga", idProg: 1, hours: 6, tasks: [{ id: "mc", title: "Matemática", cat: "Estudo", materia: "Matemática" }, { id: "ma", title: "Português", cat: "Estudo", materia: "Português" }], tips: "Aproveite a folga para focar na teoria densa de Matemática e Português." },
+                    { type: "Folga", idProg: 2, hours: 6, tasks: [{ id: "mb", title: "Conhecimentos Bancários", cat: "Estudo", materia: "Conhecimentos Bancários" }, { id: "me", title: "Informática", cat: "Estudo", materia: "Informática" }], tips: "Foco total nos detalhes teóricos de Bancários e Informática." },
+                    { type: "Folga", idProg: 3, hours: 6, tasks: [{ id: "mc_av", title: "Matemática (Avanço)", cat: "Avanço", materia: "Matemática" }, { id: "ma_av", title: "Português (Avanço)", cat: "Avanço", materia: "Português" }], tips: "Aprofundamento: Resolva questões complexas da FGV (Probabilidade/Arranjos)." },
+                    { type: "Folga", idProg: 4, hours: 6, tasks: [{ id: "mb_av", title: "Conhec. Bancários (Avanço)", cat: "Avanço", materia: "Conhecimentos Bancários" }, { id: "md", title: "Vendas e Negociação", cat: "Estudo", materia: "Vendas e Negociação" }], tips: "Bancários: Muita atenção às atualizações do Open Finance e ESG." }
                 ],
                 trabalho: [
-                    { type: "Trabalho", idProg: 1, hours: 3, tasks: [{ id: "mc", title: "Matemática", cat: "Estudo", materia: "Matemática" }], tips: "Matemática FGV: A banca adora lógica de 'verdade e mentira'." },
-                    { type: "Trabalho", idProg: 2, hours: 3, tasks: [{ id: "mf", title: "Inglês", cat: "Estudo", materia: "Inglês" }], tips: "Inglês: Identifique 'false friends' e conjunções." },
-                    { type: "Trabalho", idProg: 3, hours: 3, tasks: [{ id: "mc_av", title: "Matemática (Avanço)", cat: "Avanço", materia: "Matemática" }], tips: "Matemática: Foque em probabilidade e arranjos." }
+                    { type: "Trabalho", idProg: 1, hours: 3, tasks: [{ id: "md", title: "Vendas e Negociação", cat: "Estudo", materia: "Vendas e Negociação" }, { id: "mf", title: "Inglês", cat: "Estudo", materia: "Inglês" }], tips: "Dias de trabalho pedem leituras mais fluidas como Vendas e Inglês." },
+                    { type: "Trabalho", idProg: 2, hours: 3, tasks: [{ id: "ma_rev", title: "Português", cat: "Questões", materia: "Português" }, { id: "me_rev", title: "Informática", cat: "Questões", materia: "Informática" }], tips: "Prática rápida: Foco em resolução de questões e atalhos." },
+                    { type: "Trabalho", idProg: 3, hours: 3, tasks: [{ id: "mb_rev", title: "Conhecimentos Bancários", cat: "Questões", materia: "Conhecimentos Bancários" }], tips: "Bancários: Resolva listas de exercícios para fixar a legislação." }
                 ],
                 livre: [
                     { type: "Livre", idProg: 1, hours: 4, tasks: [{ id: "sim", title: "Simulado Completo", cat: "Avaliação", materia: "Simulados" }, { id: "red", title: "Redação", cat: "Avaliação", materia: "Redação" }], tips: "Redação: Estruture o texto claramente em 4 parágrafos." }
                 ]
             };
+
+            // Fallback para exibir na aba "Ciclo" (Visualização Base)
+            const scheduleCycleBase = [
+                { day: 1, type: "Folga", tasks: studyPools.folga[0].tasks, tips: studyPools.folga[0].tips },
+                { day: 2, type: "Trabalho", tasks: studyPools.trabalho[0].tasks, tips: studyPools.trabalho[0].tips },
+                { day: 3, type: "Folga", tasks: studyPools.folga[1].tasks, tips: studyPools.folga[1].tips },
+                { day: 4, type: "Trabalho", tasks: studyPools.trabalho[1].tasks, tips: studyPools.trabalho[1].tips },
+                { day: 5, type: "Folga", tasks: studyPools.folga[2].tasks, tips: studyPools.folga[2].tips },
+                { day: 6, type: "Trabalho", tasks: studyPools.trabalho[2].tasks, tips: studyPools.trabalho[2].tips },
+                { day: 7, type: "Livre", tasks: studyPools.livre[0].tasks, tips: studyPools.livre[0].tips }
+            ];
 
             const { currentDayTasks, currentDayMeta } = useMemo(() => {
                 let baseTasks = [];
@@ -382,7 +396,6 @@
                     acc[log.materia].erros += (log.erros || 0);
                     acc[log.materia].assuntos.push({ assunto: log.assunto, date: log.fullDate });
                     
-                    // Detalhamento por assunto para a aba de desempenho
                     const assuntoKey = log.assunto || 'Sem assunto definido';
                     if (!acc[log.materia].assuntosStats[assuntoKey]) {
                         acc[log.materia].assuntosStats[assuntoKey] = { acertos: 0, erros: 0, totalSeconds: 0 };
@@ -408,6 +421,12 @@
                     logsByMateria,
                     intensityMap
                 };
+            }, [studyLogs]);
+
+            // Opções de filtro de disciplinas
+            const subjectsOptions = useMemo(() => {
+                const subs = new Set(studyLogs.map(l => l.materia).filter(Boolean));
+                return ['Todas as Matérias', ...Array.from(subs)];
             }, [studyLogs]);
 
             // Dashboard Interativo de Questões (Cálculo)
@@ -436,7 +455,9 @@
                 const filteredLogs = studyLogs.filter(log => {
                     if (!log.fullDate) return false;
                     const logDate = parseDateStr(log.fullDate);
-                    return logDate >= startDate && logDate <= now;
+                    const isDateValid = logDate >= startDate && logDate <= now;
+                    const isSubjectValid = subjectFilter === 'Todas as Matérias' || log.materia === subjectFilter;
+                    return isDateValid && isSubjectValid;
                 });
 
                 const totalAcertos = filteredLogs.reduce((a, b) => a + (b.acertos || 0), 0);
@@ -445,7 +466,7 @@
                 const perc = total > 0 ? ((totalAcertos / total) * 100).toFixed(1) : 0;
 
                 return { total, totalAcertos, totalErros, perc };
-            }, [studyLogs, questionsFilter, customDateRange]);
+            }, [studyLogs, questionsFilter, customDateRange, subjectFilter]);
 
             const last7DaysHours = useMemo(() => {
                 const days = [];
@@ -484,7 +505,6 @@
                 if (!completedTasks[taskKey]) {
                     setActiveTaskForLog({ ...task, key: taskKey });
                     
-                    // Se o timer estiver rodando, pega o tempo. Senão, fica vazio para digitação mais fácil.
                     let h = '', m = '', s = '';
                     if (timerSeconds > 0) {
                         const timeObj = secondsToHMS(timerSeconds);
@@ -727,7 +747,7 @@
                                                         <Icon name="Coffee" size={28} className="text-blue-600 dark:text-neon" />
                                                     </div>
                                                     <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-neon transition-colors duration-300">Folga (6h)</h3>
-                                                    <p className="text-xs text-slate-500 dark:text-gray-400 font-medium px-4">Sessão intensa de teoria longa e avanços estratégicos.</p>
+                                                    <p className="text-xs text-slate-500 dark:text-gray-400 font-medium px-4">Sessão intensa de teoria densa e avanços.</p>
                                                 </button>
                                                 
                                                 <button onClick={() => selectDayProfile('trabalho')} className="group flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-darkbg border-2 border-slate-200 dark:border-darkborder hover:border-amber-500 dark:hover:border-amber-400 rounded-[2rem] transition-all duration-300 hover:shadow-xl dark:hover:shadow-[0_0_20px_rgba(251,191,36,0.15)] hover:-translate-y-2">
@@ -735,7 +755,7 @@
                                                         <Icon name="Briefcase" size={28} className="text-amber-600 dark:text-amber-400" />
                                                     </div>
                                                     <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white mb-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors duration-300">Trabalho (3h)</h3>
-                                                    <p className="text-xs text-slate-500 dark:text-gray-400 font-medium px-4">Sessão focada, blocos curtos e revisões dinâmicas.</p>
+                                                    <p className="text-xs text-slate-500 dark:text-gray-400 font-medium px-4">Leituras fluidas, questões práticas e revisões.</p>
                                                 </button>
                                                 
                                                 <button onClick={() => selectDayProfile('livre')} className="group flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-darkbg border-2 border-slate-200 dark:border-darkborder hover:border-purple-500 dark:hover:border-purple-400 rounded-[2rem] transition-all duration-300 hover:shadow-xl dark:hover:shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:-translate-y-2">
@@ -802,8 +822,17 @@
                                                 <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
                                                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[50px] rounded-full pointer-events-none transition-colors duration-500"></div>
                                                     
-                                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 relative z-10">
-                                                        <Icon name="Target" size={16} /> Resolução de Questões
+                                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                                                        <span className="flex items-center gap-2"><Icon name="Target" size={16} /> Resolução de Questões</span>
+                                                        
+                                                        {/* FILTRO DE DISCIPLINAS */}
+                                                        <select
+                                                            value={subjectFilter}
+                                                            onChange={(e) => setSubjectFilter(e.target.value)}
+                                                            className="bg-slate-50 border border-slate-200 dark:bg-darkinput dark:border-darkborder text-slate-600 dark:text-gray-300 px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase outline-none focus:border-blue-500 dark:focus:border-neon transition-colors cursor-pointer w-full sm:w-auto"
+                                                        >
+                                                            {subjectsOptions.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                                                        </select>
                                                     </h3>
 
                                                     <div className="flex flex-wrap gap-2 mb-6 relative z-10">
