@@ -174,7 +174,7 @@
             const [activeTab, setActiveTab] = useState('hoje');
             const [dashSubTab, setDashSubTab] = useState('dias');
             const [expandedMateria, setExpandedMateria] = useState(null); 
-            const [confirmDeleteId, setConfirmDeleteId] = useState(null); // Estado para controle de exclusão
+            const [confirmDeleteId, setConfirmDeleteId] = useState(null); 
             
             // FILTROS DASHBOARD QUESTÕES
             const [questionsFilter, setQuestionsFilter] = useState('7');
@@ -305,7 +305,6 @@
                 }
             };
 
-            // Função para excluir Log
             const executeDelete = async (logId) => {
                 if (!user || !window.fb) return;
                 try {
@@ -348,17 +347,6 @@
                     { type: "Livre", idProg: 1, hours: 4, tasks: [{ id: "sim", title: "Simulado Completo", cat: "Avaliação", materia: "Simulados" }, { id: "red", title: "Redação", cat: "Avaliação", materia: "Redação" }], tips: "Redação: Estruture o texto claramente em 4 parágrafos." }
                 ]
             };
-
-            // Fallback para exibir na aba "Ciclo" (Visualização Base)
-            const scheduleCycleBase = [
-                { day: 1, type: "Folga", tasks: studyPools.folga[0].tasks, tips: studyPools.folga[0].tips },
-                { day: 2, type: "Trabalho", tasks: studyPools.trabalho[0].tasks, tips: studyPools.trabalho[0].tips },
-                { day: 3, type: "Folga", tasks: studyPools.folga[1].tasks, tips: studyPools.folga[1].tips },
-                { day: 4, type: "Trabalho", tasks: studyPools.trabalho[1].tasks, tips: studyPools.trabalho[1].tips },
-                { day: 5, type: "Folga", tasks: studyPools.folga[2].tasks, tips: studyPools.folga[2].tips },
-                { day: 6, type: "Trabalho", tasks: studyPools.trabalho[2].tasks, tips: studyPools.trabalho[2].tips },
-                { day: 7, type: "Livre", tasks: studyPools.livre[0].tasks, tips: studyPools.livre[0].tips }
-            ];
 
             const { currentDayTasks, currentDayMeta } = useMemo(() => {
                 let baseTasks = [];
@@ -785,7 +773,7 @@
                                     </div>
                                 ) : (
                                     <>
-                                        {/* LINHA 1: Tarefas do Dia + Novo Dashboard de Questões */}
+                                        {/* LINHA 1: Tarefas do Dia + MATRIZ DE DIAS CONTÍNUOS */}
                                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                                             <div className="lg:col-span-2 space-y-6">
                                                 <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
@@ -832,95 +820,18 @@
                                                 </div>
                                             </div>
                                             
-                                            {/* DASHBOARD INTERATIVO DE QUESTÕES */}
+                                            {/* MATRIZ DE DIAS NA LATERAL (1 COLUNA) */}
                                             <div className="space-y-6">
-                                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
-                                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[50px] rounded-full pointer-events-none transition-colors duration-500"></div>
-                                                    
-                                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-                                                        <span className="flex items-center gap-2"><Icon name="Target" size={16} /> Resolução de Questões</span>
-                                                        
-                                                        {/* FILTRO DE DISCIPLINAS */}
-                                                        <select
-                                                            value={subjectFilter}
-                                                            onChange={(e) => setSubjectFilter(e.target.value)}
-                                                            className="bg-slate-50 border border-slate-200 dark:bg-darkinput dark:border-darkborder text-slate-600 dark:text-gray-300 px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase outline-none focus:border-blue-500 dark:focus:border-neon transition-colors cursor-pointer w-full sm:w-auto"
-                                                        >
-                                                            {subjectsOptions.map(sub => <option key={sub} value={sub}>{sub}</option>)}
-                                                        </select>
-                                                    </h3>
-
-                                                    <div className="flex flex-wrap gap-2 mb-6 relative z-10">
-                                                        {['7', '15', '30', 'custom'].map(f => (
-                                                            <button
-                                                                key={f}
-                                                                onClick={() => setQuestionsFilter(f)}
-                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border ${questionsFilter === f ? 'bg-blue-600 border-blue-600 text-white dark:bg-neon dark:border-neon dark:text-black shadow-md' : 'bg-slate-50 border-slate-200 dark:bg-darkinput dark:border-darkborder text-slate-500 dark:text-gray-400 hover:border-blue-300 dark:hover:border-neon/50 hover:text-blue-600 dark:hover:text-neon'}`}
-                                                            >
-                                                                {f === 'custom' ? 'Personalizado' : `${f} Dias`}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-
-                                                    {questionsFilter === 'custom' && (
-                                                        <div className="flex gap-2 mb-6 relative z-10 animate-fade-in">
-                                                            <input 
-                                                                type="date" 
-                                                                value={customDateRange.start} 
-                                                                onChange={e => setCustomDateRange({...customDateRange, start: e.target.value})} 
-                                                                className="flex-1 bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
-                                                                title="Data de Início"
-                                                            />
-                                                            <input 
-                                                                type="date" 
-                                                                value={customDateRange.end} 
-                                                                onChange={e => setCustomDateRange({...customDateRange, end: e.target.value})} 
-                                                                className="flex-1 bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
-                                                                title="Data Final"
-                                                            />
-                                                        </div>
-                                                    )}
-
-                                                    <div className="flex-1 flex flex-col justify-center relative z-10">
-                                                        <div className="text-center mb-6">
-                                                            <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-1 transition-colors">Questões Resolvidas</p>
-                                                            <h3 className="text-6xl font-black text-slate-800 dark:text-white tracking-tighter italic drop-shadow-sm transition-colors">{filteredQuestionsData.total}</h3>
-                                                        </div>
-
-                                                        <div className="grid grid-cols-2 gap-4 mb-8">
-                                                            <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/20 p-4 rounded-2xl text-center transition-colors">
-                                                                <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400">{filteredQuestionsData.totalAcertos}</p>
-                                                                <p className="text-[9px] font-black text-emerald-600/70 dark:text-emerald-500/70 uppercase tracking-widest mt-1">Acertos</p>
-                                                            </div>
-                                                            <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-500/20 p-4 rounded-2xl text-center transition-colors">
-                                                                <p className="text-3xl font-black text-rose-600 dark:text-rose-400">{filteredQuestionsData.totalErros}</p>
-                                                                <p className="text-[9px] font-black text-rose-600/70 dark:text-rose-500/70 uppercase tracking-widest mt-1">Erros</p>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="w-full bg-rose-100 dark:bg-rose-950 h-4 rounded-full overflow-hidden border border-rose-200 dark:border-rose-900/50 flex relative transition-colors">
-                                                            <div className="bg-emerald-500 dark:bg-neon h-full shadow-sm dark:shadow-[0_0_10px_#10b981] transition-all duration-700 ease-out" style={{width: `${filteredQuestionsData.perc}%`}}></div>
-                                                            <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-slate-900 dark:text-white mix-blend-difference tracking-widest">{filteredQuestionsData.perc}% Precisão</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* LINHA 2: Matriz de Dias (Expandida) + Gráfico de Horas */}
-                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                            {/* Matriz Expandida Ocupando 2 Colunas */}
-                                            <div className="lg:col-span-2 space-y-6">
-                                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
+                                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-6 lg:p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
                                                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/5 dark:bg-neon/5 blur-[80px] rounded-full pointer-events-none transition-colors duration-500"></div>
                                                     <div className="relative z-10 flex-1 flex flex-col">
                                                         <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
-                                                            <Icon name="Calendar" size={16} /> Matriz de Dias Contínuos
+                                                            <Icon name="Calendar" size={16} /> Matriz de Dias
                                                         </h3>
                                                         
                                                         <div className="w-full overflow-x-auto pb-2 git-scroll flex-1 flex items-center">
-                                                            <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 sm:gap-2 bg-slate-50 dark:bg-darkbg p-5 rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500 mx-auto">
-                                                                {Array.from({length: Math.max(126, Math.ceil(currentDayNumber / 7) * 7)}).map((_, i) => {
+                                                            <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 sm:gap-2 bg-slate-50 dark:bg-darkbg p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500 mx-auto">
+                                                                {Array.from({length: Math.max(84, Math.ceil(currentDayNumber / 7) * 7)}).map((_, i) => {
                                                                     const dayNum = i + 1;
                                                                     const seconds = metrics.intensityMap[dayNum] || 0;
                                                                     
@@ -944,27 +855,111 @@
                                                             </div>
                                                         </div>
                                                         
-                                                        <div className="flex justify-between items-end mt-6">
+                                                        <div className="flex justify-between items-end mt-6 flex-wrap gap-4">
                                                             <div>
-                                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Sessões Ativas</p>
-                                                                <p className="text-3xl font-black text-blue-600 dark:text-neon leading-none mt-1 transition-colors duration-500">{metrics.diasEstudados}</p>
+                                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Dia Atual</p>
+                                                                <p className="text-3xl font-black text-blue-600 dark:text-neon leading-none mt-1 transition-colors duration-500">{currentDayNumber}</p>
                                                             </div>
-                                                            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-darkbg p-2 rounded-xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
-                                                                <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mr-2">Nível</span>
-                                                                <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-slate-200 border-slate-300'}`}></div>
-                                                                <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-[#00ff88]/50 border-[#00ff88]/60' : 'bg-blue-500 border-blue-600'}`}></div>
-                                                                <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-neon shadow-[0_0_5px_#00ff88] border-[#00ff88]' : 'bg-blue-900 border-blue-950'}`}></div>
+                                                            <div className="text-right">
+                                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Ativas</p>
+                                                                <p className="text-3xl font-black text-slate-800 dark:text-white leading-none mt-1 transition-colors duration-500">{metrics.diasEstudados}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* LINHA 2: Dashboard Questões (Expandido) + Gráfico de Horas */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+                                            {/* DASHBOARD INTERATIVO DE QUESTÕES (Agora Ocupa 2 Colunas) */}
+                                            <div className="lg:col-span-2 space-y-6">
+                                                <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
+                                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[50px] rounded-full pointer-events-none transition-colors duration-500"></div>
+                                                    
+                                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 relative z-10">
+                                                        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon flex items-center gap-2 relative z-10">
+                                                            <Icon name="Target" size={16} /> Resolução de Questões
+                                                        </h3>
+                                                        
+                                                        {/* FILTROS JUNTOS NO TOPO */}
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <select
+                                                                value={subjectFilter}
+                                                                onChange={(e) => setSubjectFilter(e.target.value)}
+                                                                className="bg-slate-50 border border-slate-200 dark:bg-darkinput dark:border-darkborder text-slate-600 dark:text-gray-300 px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase outline-none focus:border-blue-500 dark:focus:border-neon transition-colors cursor-pointer w-full sm:w-auto"
+                                                            >
+                                                                {subjectsOptions.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                                                            </select>
+
+                                                            {['7', '15', '30', 'custom'].map(f => (
+                                                                <button
+                                                                    key={f}
+                                                                    onClick={() => setQuestionsFilter(f)}
+                                                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border ${questionsFilter === f ? 'bg-blue-600 border-blue-600 text-white dark:bg-neon dark:border-neon dark:text-black shadow-md' : 'bg-slate-50 border-slate-200 dark:bg-darkinput dark:border-darkborder text-slate-500 dark:text-gray-400 hover:border-blue-300 dark:hover:border-neon/50 hover:text-blue-600 dark:hover:text-neon'}`}
+                                                                >
+                                                                    {f === 'custom' ? 'Pers.' : `${f}d`}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    {questionsFilter === 'custom' && (
+                                                        <div className="flex gap-2 mb-6 relative z-10 animate-fade-in w-full max-w-md ml-auto">
+                                                            <input 
+                                                                type="date" 
+                                                                value={customDateRange.start} 
+                                                                onChange={e => setCustomDateRange({...customDateRange, start: e.target.value})} 
+                                                                className="flex-1 bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
+                                                                title="Data de Início"
+                                                            />
+                                                            <input 
+                                                                type="date" 
+                                                                value={customDateRange.end} 
+                                                                onChange={e => setCustomDateRange({...customDateRange, end: e.target.value})} 
+                                                                className="flex-1 bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
+                                                                title="Data Final"
+                                                            />
+                                                        </div>
+                                                    )}
+
+                                                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-8 items-center relative z-10 mt-2">
+                                                        <div className="text-center md:text-left flex flex-col justify-center h-full border-b md:border-b-0 md:border-r border-slate-100 dark:border-darkborder pb-6 md:pb-0 pr-0 md:pr-6">
+                                                            <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-2 transition-colors">Total Resolvidas</p>
+                                                            <h3 className="text-7xl font-black text-slate-800 dark:text-white tracking-tighter italic drop-shadow-sm transition-colors">{filteredQuestionsData.total}</h3>
+                                                        </div>
+
+                                                        <div className="col-span-1 md:col-span-2 flex flex-col justify-center w-full space-y-6">
+                                                            <div className="grid grid-cols-2 gap-4">
+                                                                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/20 p-4 rounded-2xl text-center transition-colors">
+                                                                    <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400">{filteredQuestionsData.totalAcertos}</p>
+                                                                    <p className="text-[9px] font-black text-emerald-600/70 dark:text-emerald-500/70 uppercase tracking-widest mt-1">Acertos</p>
+                                                                </div>
+                                                                <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-500/20 p-4 rounded-2xl text-center transition-colors">
+                                                                    <p className="text-3xl font-black text-rose-600 dark:text-rose-400">{filteredQuestionsData.totalErros}</p>
+                                                                    <p className="text-[9px] font-black text-rose-600/70 dark:text-rose-500/70 uppercase tracking-widest mt-1">Erros</p>
+                                                                </div>
+                                                            </div>
+
+                                                            <div>
+                                                                <div className="flex justify-between items-end mb-2">
+                                                                    <span className="text-[10px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-widest">Precisão de Acertos</span>
+                                                                    <span className="text-sm font-black text-blue-600 dark:text-neon">{filteredQuestionsData.perc}%</span>
+                                                                </div>
+                                                                <div className="w-full bg-slate-200 dark:bg-darkinput h-3 rounded-full overflow-hidden border border-slate-300 dark:border-darkborder flex transition-colors">
+                                                                    <div className="bg-blue-500 dark:bg-neon h-full shadow-sm dark:shadow-[0_0_10px_#00ff88] transition-all duration-700 ease-out" style={{width: `${filteredQuestionsData.perc}%`}}></div>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            {/* Gráfico de Horas ao lado da Matriz */}
+                                            {/* Gráfico de Horas ao lado */}
                                             <div className="space-y-6">
                                                 <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
                                                     <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
-                                                        <Icon name="BarChart" size={16} /> Horas Recentes (7d)
+                                                        <Icon name="BarChart" size={16} /> Horas (7 Dias)
                                                     </h3>
                                                     
                                                     <div className="flex items-end justify-between flex-1 gap-2 md:gap-3 mt-2 px-1">
@@ -1082,7 +1077,7 @@
                                                 {studyLogs.sort((a,b) => b.timestamp - a.timestamp).map(log => (
                                                     <div key={log.id} className="p-5 bg-slate-50 dark:bg-darkbg rounded-3xl border border-slate-200 dark:border-darkborder hover:border-blue-400 dark:hover:border-neon/40 transition-all group relative">
                                                         {confirmDeleteId === log.id ? (
-                                                            <div className="absolute top-4 right-4 flex items-center gap-2 bg-slate-200 dark:bg-[#1a1a1a] p-1.5 rounded-xl z-10 animate-fade-in shadow-lg">
+                                                            <div className="absolute top-4 right-4 flex items-center gap-2 bg-slate-200 dark:bg-[#1a1a1a] p-1.5 rounded-xl z-10 animate-fade-in shadow-lg border border-slate-300 dark:border-gray-700">
                                                                 <span className="text-[10px] font-black text-rose-500 px-2 uppercase tracking-widest">Excluir?</span>
                                                                 <button onClick={() => executeDelete(log.id)} className="p-1.5 bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition-colors"><Icon name="Check" size={14} /></button>
                                                                 <button onClick={() => setConfirmDeleteId(null)} className="p-1.5 bg-slate-400 dark:bg-gray-700 text-white rounded-lg hover:bg-slate-500 dark:hover:bg-gray-600 transition-colors"><Icon name="X" size={14} /></button>
@@ -1146,15 +1141,15 @@
                                                         </div>
                                                     ) : (
                                                         <div className="mt-8 animate-fade-in space-y-4">
-                                                            <h5 className="text-[10px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-widest border-b border-slate-100 dark:border-darkborder pb-2">Detalhamento por Assunto</h5>
+                                                            <h5 className="text-[10px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-widest border-b border-slate-100 dark:border-darkborder pb-2 transition-colors duration-500">Detalhamento por Assunto</h5>
                                                             <div className="overflow-x-auto no-scrollbar">
                                                                 <table className="w-full text-left border-separate border-spacing-y-2">
                                                                     <thead>
-                                                                        <tr className="text-[10px] text-slate-400 dark:text-gray-500 uppercase tracking-widest">
-                                                                            <th className="pb-2 pl-3">Assunto</th>
-                                                                            <th className="pb-2 text-center">Questões (C/E)</th>
-                                                                            <th className="pb-2 text-center">Precisão</th>
-                                                                            <th className="pb-2 pr-3 text-right">Tempo</th>
+                                                                        <tr className="text-[10px] text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">
+                                                                            <th className="pb-2 pl-3 font-black">Assunto</th>
+                                                                            <th className="pb-2 text-center font-black">Questões (C/E)</th>
+                                                                            <th className="pb-2 text-center font-black">Precisão</th>
+                                                                            <th className="pb-2 pr-3 text-right font-black">Tempo</th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody>
@@ -1162,17 +1157,17 @@
                                                                             const totalAssunto = stats.acertos + stats.erros;
                                                                             const percAssunto = totalAssunto > 0 ? ((stats.acertos / totalAssunto) * 100).toFixed(0) : 0;
                                                                             return (
-                                                                                <tr key={idx} className="bg-slate-50 dark:bg-darkbg hover:bg-slate-100 dark:hover:bg-[#111] transition-colors rounded-xl">
-                                                                                    <td className="p-3 text-xs font-bold text-slate-700 dark:text-gray-300 rounded-l-xl">{assunto}</td>
+                                                                                <tr key={idx} className="bg-slate-50 dark:bg-darkbg hover:bg-slate-100 dark:hover:bg-[#111] transition-colors duration-300 rounded-xl">
+                                                                                    <td className="p-3 text-xs font-bold text-slate-700 dark:text-gray-300 rounded-l-xl transition-colors duration-500">{assunto}</td>
                                                                                     <td className="p-3 text-center">
-                                                                                        <span className="text-xs font-black text-emerald-600 dark:text-neon">{stats.acertos}</span>
-                                                                                        <span className="text-xs text-slate-400 dark:text-gray-600 mx-1">/</span>
-                                                                                        <span className="text-xs font-black text-rose-500">{stats.erros}</span>
+                                                                                        <span className="text-xs font-black text-emerald-600 dark:text-neon transition-colors duration-500">{stats.acertos}</span>
+                                                                                        <span className="text-xs text-slate-400 dark:text-gray-600 mx-1 transition-colors duration-500">/</span>
+                                                                                        <span className="text-xs font-black text-rose-500 transition-colors duration-500">{stats.erros}</span>
                                                                                     </td>
                                                                                     <td className="p-3 text-center">
-                                                                                        <span className={`text-xs font-black ${percAssunto >= 70 ? 'text-blue-600 dark:text-neon' : 'text-amber-500'}`}>{percAssunto}%</span>
+                                                                                        <span className={`text-xs font-black transition-colors duration-500 ${percAssunto >= 70 ? 'text-blue-600 dark:text-neon drop-shadow-sm' : 'text-amber-500'}`}>{percAssunto}%</span>
                                                                                     </td>
-                                                                                    <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-gray-400 rounded-r-xl">{formatTimeString(stats.totalSeconds)}</td>
+                                                                                    <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-gray-400 rounded-r-xl transition-colors duration-500">{formatTimeString(stats.totalSeconds)}</td>
                                                                                 </tr>
                                                                             );
                                                                         })}
@@ -1259,95 +1254,6 @@
                             </div>
                         )}
                     </main>
-
-                    {/* Modal de Registro Cloud SRS - Adaptável ao Tema */}
-                    {showLogModal && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-xl animate-fade-in transition-colors duration-500">
-                            <div className="bg-white dark:bg-darkcard rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto git-scroll p-8 md:p-10 shadow-2xl relative border border-slate-200 dark:border-neon/30 transition-colors duration-500">
-                                <button onClick={() => setShowLogModal(false)} className="absolute top-8 right-8 text-slate-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon transition-colors"><Icon name="X" size={24}/></button>
-                                
-                                <div className="text-center mb-10">
-                                    <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tighter italic uppercase leading-none transition-colors duration-500">Registrar Missão</h2>
-                                    <p className="text-[10px] font-black text-blue-600 dark:text-neon uppercase tracking-[0.3em] mt-3 transition-colors duration-500">{activeTaskForLog?.title}</p>
-                                </div>
-
-                                <div className="space-y-6">
-                                    <div className="flex bg-slate-100 dark:bg-darkbg p-1.5 rounded-2xl border border-slate-200 dark:border-darkborder gap-2 transition-colors duration-500">
-                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'teoria'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'teoria' ? 'bg-white dark:bg-neon text-blue-600 dark:text-black shadow-md dark:shadow-[0_0_10px_rgba(0,255,136,0.3)]' : 'text-slate-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon'}`}>Teoria</button>
-                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'revisao'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'revisao' ? 'bg-white dark:bg-neon text-blue-600 dark:text-black shadow-md dark:shadow-[0_0_10px_rgba(0,255,136,0.3)]' : 'text-slate-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon'}`}>Revisão</button>
-                                    </div>
-
-                                    {logForm.tipoEstudo === 'teoria' && (
-                                        <div className="p-6 bg-slate-50 dark:bg-darkbg rounded-3xl space-y-6 border border-slate-200 dark:border-darkborder animate-fade-in shadow-inner transition-colors duration-500">
-                                            <div className="flex items-center gap-4 flex-wrap">
-                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input type="radio" className="w-4 h-4 text-blue-600 dark:text-neon bg-white dark:bg-[#111] border-slate-300 dark:border-darkborder focus:ring-blue-500 dark:focus:ring-neon focus:ring-offset-slate-50 dark:focus:ring-offset-darkbg" checked={logForm.tipoTeoria === 'pdf'} onChange={() => setLogForm({...logForm, tipoTeoria: 'pdf'})} />
-                                                    <span className="text-xs font-black uppercase text-blue-800 dark:text-neon transition-colors duration-500">PDF</span>
-                                                </label>
-                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input type="radio" className="w-4 h-4 text-blue-600 dark:text-neon bg-white dark:bg-[#111] border-slate-300 dark:border-darkborder focus:ring-blue-500 dark:focus:ring-neon focus:ring-offset-slate-50 dark:focus:ring-offset-darkbg" checked={logForm.tipoTeoria === 'video'} onChange={() => setLogForm({...logForm, tipoTeoria: 'video'})} />
-                                                    <span className="text-xs font-black uppercase text-blue-800 dark:text-neon transition-colors duration-500">Vídeo</span>
-                                                </label>
-                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input type="radio" className="w-4 h-4 text-blue-600 dark:text-neon bg-white dark:bg-[#111] border-slate-300 dark:border-darkborder focus:ring-blue-500 dark:focus:ring-neon focus:ring-offset-slate-50 dark:focus:ring-offset-darkbg" checked={logForm.tipoTeoria === 'questoes'} onChange={() => setLogForm({...logForm, tipoTeoria: 'questoes'})} />
-                                                    <span className="text-xs font-black uppercase text-blue-800 dark:text-neon transition-colors duration-500">Qts.</span>
-                                                </label>
-                                            </div>
-                                            {logForm.tipoTeoria === 'pdf' ? (
-                                                <input type="number" placeholder="Em qual página parou?" className="w-full bg-white dark:bg-[#111] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-2xl text-sm font-black outline-none border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-colors duration-300" value={logForm.pdfPagina} onChange={e => setLogForm({...logForm, pdfPagina: e.target.value})} />
-                                            ) : logForm.tipoTeoria === 'video' ? (
-                                                <div className="space-y-4">
-                                                    <input type="text" placeholder="Nº da Aula (ex: Aula 05)" className="w-full bg-white dark:bg-[#111] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-2xl text-sm font-black outline-none border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-colors duration-300" value={logForm.videoAula} onChange={e => setLogForm({...logForm, videoAula: e.target.value})} />
-                                                    <div className="flex gap-2 items-center">
-                                                        <input type="text" maxLength="2" placeholder="Min" className="w-full bg-white dark:bg-[#111] text-blue-600 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-xl text-center font-mono font-bold border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.videoMinuto} onChange={e => handleTimeInputChange('videoMinuto', e.target.value)} />
-                                                        <span className="font-bold text-slate-400 dark:text-gray-600">:</span>
-                                                        <input type="text" maxLength="2" placeholder="Seg" className="w-full bg-white dark:bg-[#111] text-blue-600 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-xl text-center font-mono font-bold border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.videoSegundo} onChange={e => handleTimeInputChange('videoSegundo', e.target.value)} />
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <input type="text" placeholder="Qual lista ou questão parou?" className="w-full bg-white dark:bg-[#111] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-2xl text-sm font-black outline-none border border-slate-200 dark:border-transparent focus:border-blue-500 dark:focus:border-neon focus:ring-1 focus:ring-blue-500 dark:focus:ring-neon transition-colors duration-300" value={logForm.questaoParada} onChange={e => setLogForm({...logForm, questaoParada: e.target.value})} />
-                                            )}
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 italic transition-colors duration-500">Assunto Estudado</label>
-                                        <input type="text" placeholder="Ex: Crase FGV" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-blue-600 dark:text-neon placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-2xl text-sm font-black italic outline-none focus:border-blue-500 dark:focus:border-neon transition-colors duration-300" value={logForm.assunto} onChange={e => setLogForm({...logForm, assunto: e.target.value})} />
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 italic transition-colors duration-500">Tempo Gasto</label>
-                                            <div className="flex gap-2 items-center">
-                                                <input type="text" maxLength="2" placeholder="HH" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-xl text-center font-mono font-bold focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.h} onChange={e => handleTimeInputChange('h', e.target.value)} />
-                                                <span className="font-bold text-slate-400 dark:text-gray-600">:</span>
-                                                <input type="text" maxLength="2" placeholder="MM" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-xl text-center font-mono font-bold focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.m} onChange={e => handleTimeInputChange('m', e.target.value)} />
-                                                <span className="font-bold text-slate-400 dark:text-gray-600">:</span>
-                                                <input type="text" maxLength="2" placeholder="SS" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-xl text-center font-mono font-bold focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.s} onChange={e => handleTimeInputChange('s', e.target.value)} />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 italic transition-colors duration-500">Exercícios</label>
-                                            <div className="flex gap-3">
-                                                <input type="number" placeholder="Total" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-xl text-sm font-black focus:border-blue-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.total} onChange={e => setLogForm({...logForm, total: e.target.value})} />
-                                                <input type="number" placeholder="Acertos" className="w-full bg-emerald-50 dark:bg-neon/10 border border-emerald-200 dark:border-neon/30 text-emerald-600 dark:text-neon placeholder-emerald-300 dark:placeholder-emerald-800 p-4 rounded-xl text-sm font-black focus:border-emerald-500 dark:focus:border-neon outline-none transition-colors duration-300" value={logForm.acertos} onChange={e => setLogForm({...logForm, acertos: e.target.value})} />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <textarea rows="2" placeholder="O que sentiu de mais difícil nesta sessão?" className="w-full bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkborder text-slate-700 dark:text-gray-300 placeholder-slate-400 dark:placeholder-gray-700 p-4 rounded-2xl text-sm font-medium outline-none focus:border-blue-500 dark:focus:border-neon git-scroll transition-colors duration-300" value={logForm.anotacoes} onChange={e => setLogForm({...logForm, anotacoes: e.target.value})}></textarea>
-
-                                    <button 
-                                        onClick={submitLog} 
-                                        disabled={isSubmitting}
-                                        className={`w-full font-black py-5 rounded-[2rem] shadow-lg transition-all uppercase tracking-[0.3em] text-xs italic ${isSubmitting ? 'bg-slate-300 dark:bg-emerald-900 text-slate-500 dark:text-emerald-700 cursor-not-allowed' : 'bg-blue-600 dark:bg-neon text-white dark:text-black hover:bg-blue-700 dark:hover:bg-neonhover hover:shadow-xl dark:hover:shadow-[0_0_20px_#10b981] active:scale-95'}`}
-                                    >
-                                        {isSubmitting ? 'A Sincronizar...' : 'Sincronizar Cloud'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
 
                     {/* Footer Stats Cloud Dinâmico */}
                     {!showLogModal && (
