@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bancário Pro FGV - Master Edition</title>
+    <title>Acompanhamento de Estudos BB</title>
     <!-- React e Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -392,23 +392,48 @@
             const metrics = useMemo(() => {
                 const logsByMateria = studyLogs.reduce((acc, log) => {
                     if (!acc[log.materia]) {
-                        acc[log.materia] = { totalSeconds: 0, acertos: 0, erros: 0, assuntos: [], assuntosStats: {} };
+                        acc[log.materia] = { totalSeconds: 0, acertos: 0, erros: 0, assuntos: [], assuntosStats: {}, recentAssuntos: [] };
                     }
                     acc[log.materia].totalSeconds += (log.totalSeconds || 0);
                     acc[log.materia].acertos += (log.acertos || 0);
                     acc[log.materia].erros += (log.erros || 0);
                     acc[log.materia].assuntos.push({ assunto: log.assunto, date: log.fullDate });
                     
-                    const assuntoKey = log.assunto || 'Sem assunto definido';
+                    const assuntoRaw = log.assunto || 'Sem assunto definido';
+                    const assuntoKey = assuntoRaw.trim().toLowerCase(); // Para agrupar indepentente de case
+                    
                     if (!acc[log.materia].assuntosStats[assuntoKey]) {
-                        acc[log.materia].assuntosStats[assuntoKey] = { acertos: 0, erros: 0, totalSeconds: 0 };
+                        acc[log.materia].assuntosStats[assuntoKey] = { 
+                            displayNome: assuntoRaw.trim(), 
+                            acertos: 0, 
+                            erros: 0, 
+                            totalSeconds: 0,
+                            dates: new Set() 
+                        };
                     }
                     acc[log.materia].assuntosStats[assuntoKey].acertos += (log.acertos || 0);
                     acc[log.materia].assuntosStats[assuntoKey].erros += (log.erros || 0);
                     acc[log.materia].assuntosStats[assuntoKey].totalSeconds += (log.totalSeconds || 0);
+                    acc[log.materia].assuntosStats[assuntoKey].dates.add(log.fullDate);
 
                     return acc;
                 }, {});
+
+                // Construir a lista de ÚLTIMOS TEMAS sem duplicatas visuais
+                Object.keys(logsByMateria).forEach(materia => {
+                    const uniqueRecent = [];
+                    const seen = new Set();
+                    for (let i = logsByMateria[materia].assuntos.length - 1; i >= 0; i--) {
+                        const a = logsByMateria[materia].assuntos[i];
+                        const key = (a.assunto || 'Sem assunto definido').trim().toLowerCase();
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            uniqueRecent.push({ assunto: (a.assunto || 'Sem assunto definido').trim(), date: a.date });
+                            if (uniqueRecent.length === 3) break;
+                        }
+                    }
+                    logsByMateria[materia].recentAssuntos = uniqueRecent;
+                });
 
                 const intensityMap = {};
                 studyLogs.forEach(log => {
@@ -605,7 +630,7 @@
                         <Icon name="Zap" size={64} className="animate-pulse dark:drop-shadow-[0_0_20px_rgba(0,255,136,0.8)] drop-shadow-md" />
                         <div className="space-y-2">
                             <p className="font-black uppercase tracking-[0.2em] text-xs text-slate-800 dark:text-gray-200">A Carregar Sistema...</p>
-                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-medium uppercase tracking-widest">Master Edition</p>
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-medium uppercase tracking-widest">Acompanhamento BB</p>
                         </div>
                     </div>
                 </div>
@@ -630,7 +655,7 @@
                         </div>
                         <div className="text-center mb-8 relative z-10">
                             <h1 className="text-2xl font-black italic tracking-tighter uppercase leading-none text-slate-900 dark:text-white drop-shadow-sm transition-colors duration-500">
-                                FGV <span className="text-blue-600 dark:text-neon transition-colors duration-500">Master</span>
+                                Acompanhamento <span className="text-blue-600 dark:text-neon transition-colors duration-500">BB</span>
                             </h1>
                             <p className="text-slate-500 dark:text-gray-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-2 transition-colors duration-500">Acesso Restrito</p>
                         </div>
@@ -688,9 +713,9 @@
                                     </div>
                                     <div>
                                         <h1 className="text-2xl font-black italic tracking-tighter uppercase leading-none text-slate-900 dark:text-white drop-shadow-sm transition-colors duration-500">
-                                            FGV <span className="text-blue-600 dark:text-neon transition-colors duration-500">Master</span>
+                                            Acompanhamento <span className="text-blue-600 dark:text-neon transition-colors duration-500">BB</span>
                                         </h1>
-                                        <p className="text-slate-500 dark:text-gray-400 text-[10px] font-bold uppercase tracking-[0.4em] mt-1 transition-colors duration-500">{isDarkMode ? 'Dark Neon Edition' : 'Light Blue Edition'}</p>
+                                        <p className="text-slate-500 dark:text-gray-400 text-[10px] font-bold uppercase tracking-[0.4em] mt-1 transition-colors duration-500">FGV • {isDarkMode ? 'Dark Neon' : 'Light Blue'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3 md:hidden">
@@ -1133,10 +1158,10 @@
                                                     {!isExpanded ? (
                                                         <div className="space-y-3">
                                                             <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Últimos Temas:</p>
-                                                            {data.assuntos.slice(-3).reverse().map((a, i) => (
-                                                                <div key={i} className="flex justify-between text-[11px] font-bold text-slate-500 dark:text-gray-400 bg-slate-50 dark:bg-darkbg p-3 rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
-                                                                    <span className="truncate group-hover:text-slate-800 dark:group-hover:text-gray-200 transition-colors">{a.assunto}</span>
-                                                                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-600 ml-2 transition-colors duration-500">{a.date}</span>
+                                                            {data.recentAssuntos.map((a, i) => (
+                                                                <div key={i} className="flex justify-between items-center text-[11px] font-bold text-slate-500 dark:text-gray-400 bg-slate-50 dark:bg-darkbg p-3 rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                                    <span className="truncate group-hover:text-slate-800 dark:group-hover:text-gray-200 transition-colors flex-1">{a.assunto}</span>
+                                                                    <span className="text-[9px] font-black text-slate-400 dark:text-gray-600 ml-2 whitespace-nowrap bg-white dark:bg-[#1a1a1a] px-2 py-1 rounded-lg border border-slate-100 dark:border-darkborder transition-colors duration-500">{a.date.substring(0, 5)}</span>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -1147,19 +1172,25 @@
                                                                 <table className="w-full text-left border-separate border-spacing-y-2">
                                                                     <thead>
                                                                         <tr className="text-[10px] text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">
-                                                                            <th className="pb-2 pl-3 font-black">Assunto</th>
+                                                                            <th className="pb-2 pl-3 font-black">Assunto / Datas</th>
                                                                             <th className="pb-2 text-center font-black">Questões (C/E)</th>
                                                                             <th className="pb-2 text-center font-black">Precisão</th>
                                                                             <th className="pb-2 pr-3 text-right font-black">Tempo</th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody>
-                                                                        {Object.entries(data.assuntosStats).sort((a,b) => (b[1].acertos+b[1].erros) - (a[1].acertos+a[1].erros)).map(([assunto, stats], idx) => {
+                                                                        {Object.values(data.assuntosStats).sort((a,b) => (b.acertos+b.erros) - (a.acertos+a.erros)).map((stats, idx) => {
                                                                             const totalAssunto = stats.acertos + stats.erros;
                                                                             const percAssunto = totalAssunto > 0 ? ((stats.acertos / totalAssunto) * 100).toFixed(0) : 0;
                                                                             return (
                                                                                 <tr key={idx} className="bg-slate-50 dark:bg-darkbg hover:bg-slate-100 dark:hover:bg-[#111] transition-colors duration-300 rounded-xl">
-                                                                                    <td className="p-3 text-xs font-bold text-slate-700 dark:text-gray-300 rounded-l-xl transition-colors duration-500">{assunto}</td>
+                                                                                    <td className="p-3 text-xs font-bold text-slate-700 dark:text-gray-300 rounded-l-xl transition-colors duration-500">
+                                                                                        {stats.displayNome}
+                                                                                        <div className="text-[9px] text-slate-400 dark:text-gray-500 font-normal mt-1.5 leading-tight tracking-wider flex items-center gap-1">
+                                                                                            <Icon name="Calendar" size={10} className="opacity-70" />
+                                                                                            {Array.from(stats.dates).join(', ')}
+                                                                                        </div>
+                                                                                    </td>
                                                                                     <td className="p-3 text-center">
                                                                                         <span className="text-xs font-black text-emerald-600 dark:text-neon transition-colors duration-500">{stats.acertos}</span>
                                                                                         <span className="text-xs text-slate-400 dark:text-gray-600 mx-1 transition-colors duration-500">/</span>
