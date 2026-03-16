@@ -173,6 +173,7 @@
             const [currentDayNumber, setCurrentDayNumber] = useState(1);
             const [activeTab, setActiveTab] = useState('hoje');
             const [dashSubTab, setDashSubTab] = useState('dias');
+            const [expandedMateria, setExpandedMateria] = useState(null); // Para o detalhamento de desempenho
             
             const [questionsFilter, setQuestionsFilter] = useState('7');
             const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
@@ -183,7 +184,7 @@
             const [showLogModal, setShowLogModal] = useState(false);
             const [activeTaskForLog, setActiveTaskForLog] = useState(null);
             const [logForm, setLogForm] = useState({ 
-                assunto: '', h: '00', m: '00', s: '00', 
+                assunto: '', h: '', m: '', s: '', // Alterado para strings vazias para não exigir apagar '00'
                 total: '', acertos: '', anotacoes: '', 
                 tipoEstudo: 'teoria', tipoTeoria: 'pdf', 
                 pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '', questaoParada: '' 
@@ -313,7 +314,7 @@
                 return `${h}:${m}:${sec}`;
             };
 
-            // NOVO: TRILHAS DE PROGRESSÃO (Substitui o array rígido)
+            // TRILHAS DE PROGRESSÃO
             const studyPools = {
                 folga: [
                     { type: "Folga", idProg: 1, hours: 6, tasks: [{ id: "ma", title: "Português", cat: "Estudo", materia: "Português" }, { id: "mb", title: "Conhecimentos Bancários", cat: "Estudo", materia: "Conhecimentos Bancários" }], tips: "Foco total na intenção comunicativa do autor na FGV." },
@@ -330,14 +331,12 @@
                 ]
             };
 
-            // Cálculo das Tarefas Dinâmicas para o Dia Atual
             const { currentDayTasks, currentDayMeta } = useMemo(() => {
                 let baseTasks = [];
                 let meta = { type: "Aguardando Perfil...", hours: 0, tips: "Selecione o seu perfil de disponibilidade para iniciar as missões deste dia." };
                 const profileToday = dayProfiles[currentDayNumber];
 
                 if (profileToday && studyPools[profileToday]) {
-                    // Descobrir quantos dias *deste perfil* já ocorreram antes do dia atual
                     let pastCount = 0;
                     for (let i = 1; i < currentDayNumber; i++) {
                         if (dayProfiles[i] === profileToday) pastCount++;
@@ -348,14 +347,12 @@
                     baseTasks = meta.tasks;
                 }
 
-                // Cálculo SRS (Spaced Repetition System) - Funciona independentemente do perfil
                 const reviews = [];
                 if (profileToday) {
                     const gaps = [1, 7, 15, 30];
                     gaps.forEach(gap => {
                         const targetDay = currentDayNumber - gap;
                         if (targetDay > 0) {
-                            // Procura o que foi estudado como "teoria" no dia alvo
                             const subjectsOnTarget = studyLogs
                                 .filter(log => log.recordedDay === targetDay && log.tipoEstudo === 'teoria')
                                 .map(log => log.materia);
@@ -377,11 +374,23 @@
 
             const metrics = useMemo(() => {
                 const logsByMateria = studyLogs.reduce((acc, log) => {
-                    if (!acc[log.materia]) acc[log.materia] = { totalSeconds: 0, acertos: 0, erros: 0, assuntos: [] };
+                    if (!acc[log.materia]) {
+                        acc[log.materia] = { totalSeconds: 0, acertos: 0, erros: 0, assuntos: [], assuntosStats: {} };
+                    }
                     acc[log.materia].totalSeconds += (log.totalSeconds || 0);
                     acc[log.materia].acertos += (log.acertos || 0);
                     acc[log.materia].erros += (log.erros || 0);
                     acc[log.materia].assuntos.push({ assunto: log.assunto, date: log.fullDate });
+                    
+                    // Detalhamento por assunto para a aba de desempenho
+                    const assuntoKey = log.assunto || 'Sem assunto definido';
+                    if (!acc[log.materia].assuntosStats[assuntoKey]) {
+                        acc[log.materia].assuntosStats[assuntoKey] = { acertos: 0, erros: 0, totalSeconds: 0 };
+                    }
+                    acc[log.materia].assuntosStats[assuntoKey].acertos += (log.acertos || 0);
+                    acc[log.materia].assuntosStats[assuntoKey].erros += (log.erros || 0);
+                    acc[log.materia].assuntosStats[assuntoKey].totalSeconds += (log.totalSeconds || 0);
+
                     return acc;
                 }, {});
 
@@ -474,8 +483,16 @@
                 const taskKey = `day-${currentDayNumber}-${task.id}`;
                 if (!completedTasks[taskKey]) {
                     setActiveTaskForLog({ ...task, key: taskKey });
+                    
+                    // Se o timer estiver rodando, pega o tempo. Senão, fica vazio para digitação mais fácil.
+                    let h = '', m = '', s = '';
+                    if (timerSeconds > 0) {
+                        const timeObj = secondsToHMS(timerSeconds);
+                        h = timeObj.h; m = timeObj.m; s = timeObj.s;
+                    }
+
                     setLogForm({ 
-                        assunto: '', h: '00', m: '00', s: '00', total: '', acertos: '', anotacoes: '', 
+                        assunto: '', h, m, s, total: '', acertos: '', anotacoes: '', 
                         tipoEstudo: 'teoria', tipoTeoria: 'pdf', 
                         pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '', questaoParada: '' 
                     });
@@ -488,7 +505,10 @@
             };
 
             const submitLog = async () => {
-                if (!user || !window.fb) return alert("Atenção: Sistema não conectado ao Firebase.");
+                if (!user || !window.fb) {
+                    alert("Atenção: Sistema não conectado ao Firebase.");
+                    return;
+                }
                 if (isSubmitting) return;
                 setIsSubmitting(true);
 
@@ -1034,28 +1054,74 @@
                                 )}
 
                                 {dashSubTab === 'desempenho' && (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
                                         {Object.entries(metrics.logsByMateria).map(([materia, data]) => {
                                             const totalQ = data.acertos + data.erros;
                                             const perc = totalQ > 0 ? ((data.acertos / totalQ) * 100).toFixed(1) : 0;
+                                            const isExpanded = expandedMateria === materia;
+
                                             return (
-                                                <div key={materia} className="bg-white dark:bg-darkcard p-8 rounded-[2.5rem] shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder hover:border-blue-400 dark:hover:border-neon/30 transition-all duration-500">
-                                                    <div className="flex justify-between items-center mb-6">
-                                                        <h4 className="font-black text-slate-800 dark:text-gray-200 uppercase italic tracking-tighter text-lg transition-colors duration-500">{materia}</h4>
+                                                <div key={materia} className={`bg-white dark:bg-darkcard p-8 rounded-[2.5rem] shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder hover:border-blue-400 dark:hover:border-neon/30 transition-all duration-500 ${isExpanded ? 'lg:col-span-2' : ''}`}>
+                                                    <div 
+                                                        className="flex justify-between items-center mb-6 cursor-pointer group"
+                                                        onClick={() => setExpandedMateria(isExpanded ? null : materia)}
+                                                    >
+                                                        <h4 className="font-black text-slate-800 dark:text-gray-200 uppercase italic tracking-tighter text-lg transition-colors duration-500 flex items-center gap-2">
+                                                            {materia} <Icon name={isExpanded ? 'ChevronUp' : 'ChevronDown'} size={18} className="text-slate-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-neon transition-colors" />
+                                                        </h4>
                                                         <span className="text-3xl font-black text-blue-600 dark:text-neon tracking-tighter drop-shadow-sm dark:drop-shadow-[0_0_8px_rgba(0,255,136,0.3)] transition-colors duration-500">{perc}%</span>
                                                     </div>
                                                     <div className="w-full bg-slate-100 dark:bg-darkbg h-3 rounded-full mb-6 overflow-hidden border border-slate-200 dark:border-darkborder flex transition-colors duration-500">
                                                         <div className="bg-blue-500 dark:bg-neon h-full shadow-sm dark:shadow-[0_0_10px_#00ff88] transition-all duration-500" style={{width: `${perc}%`}}></div>
                                                     </div>
-                                                    <div className="space-y-3">
-                                                        <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Temas abordados:</p>
-                                                        {data.assuntos.slice(-3).reverse().map((a, i) => (
-                                                            <div key={i} className="flex justify-between text-[11px] font-bold text-slate-500 dark:text-gray-400 bg-slate-50 dark:bg-darkbg p-3 rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
-                                                                <span className="truncate group-hover:text-slate-800 dark:group-hover:text-gray-200 transition-colors">{a.assunto}</span>
-                                                                <span className="text-[10px] font-black text-slate-400 dark:text-gray-600 ml-2 transition-colors duration-500">{a.date}</span>
+                                                    
+                                                    {!isExpanded ? (
+                                                        <div className="space-y-3">
+                                                            <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Últimos Temas:</p>
+                                                            {data.assuntos.slice(-3).reverse().map((a, i) => (
+                                                                <div key={i} className="flex justify-between text-[11px] font-bold text-slate-500 dark:text-gray-400 bg-slate-50 dark:bg-darkbg p-3 rounded-2xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                                    <span className="truncate group-hover:text-slate-800 dark:group-hover:text-gray-200 transition-colors">{a.assunto}</span>
+                                                                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-600 ml-2 transition-colors duration-500">{a.date}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="mt-8 animate-fade-in space-y-4">
+                                                            <h5 className="text-[10px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-widest border-b border-slate-100 dark:border-darkborder pb-2">Detalhamento por Assunto</h5>
+                                                            <div className="overflow-x-auto no-scrollbar">
+                                                                <table className="w-full text-left border-separate border-spacing-y-2">
+                                                                    <thead>
+                                                                        <tr className="text-[10px] text-slate-400 dark:text-gray-500 uppercase tracking-widest">
+                                                                            <th className="pb-2 pl-3">Assunto</th>
+                                                                            <th className="pb-2 text-center">Questões (C/E)</th>
+                                                                            <th className="pb-2 text-center">Precisão</th>
+                                                                            <th className="pb-2 pr-3 text-right">Tempo</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {Object.entries(data.assuntosStats).sort((a,b) => (b[1].acertos+b[1].erros) - (a[1].acertos+a[1].erros)).map(([assunto, stats], idx) => {
+                                                                            const totalAssunto = stats.acertos + stats.erros;
+                                                                            const percAssunto = totalAssunto > 0 ? ((stats.acertos / totalAssunto) * 100).toFixed(0) : 0;
+                                                                            return (
+                                                                                <tr key={idx} className="bg-slate-50 dark:bg-darkbg hover:bg-slate-100 dark:hover:bg-[#111] transition-colors rounded-xl">
+                                                                                    <td className="p-3 text-xs font-bold text-slate-700 dark:text-gray-300 rounded-l-xl">{assunto}</td>
+                                                                                    <td className="p-3 text-center">
+                                                                                        <span className="text-xs font-black text-emerald-600 dark:text-neon">{stats.acertos}</span>
+                                                                                        <span className="text-xs text-slate-400 dark:text-gray-600 mx-1">/</span>
+                                                                                        <span className="text-xs font-black text-rose-500">{stats.erros}</span>
+                                                                                    </td>
+                                                                                    <td className="p-3 text-center">
+                                                                                        <span className={`text-xs font-black ${percAssunto >= 70 ? 'text-blue-600 dark:text-neon' : 'text-amber-500'}`}>{percAssunto}%</span>
+                                                                                    </td>
+                                                                                    <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-gray-400 rounded-r-xl">{formatTimeString(stats.totalSeconds)}</td>
+                                                                                </tr>
+                                                                            );
+                                                                        })}
+                                                                    </tbody>
+                                                                </table>
                                                             </div>
-                                                        ))}
-                                                    </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             );
                                         })}
@@ -1138,7 +1204,7 @@
                     {/* Modal de Registro Cloud SRS - Adaptável ao Tema */}
                     {showLogModal && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-xl animate-fade-in transition-colors duration-500">
-                            <div className="bg-white dark:bg-darkcard rounded-[2.5rem] w-full max-w-lg max-h-[90vh] overflow-y-auto git-scroll p-8 md:p-12 shadow-2xl relative border border-slate-200 dark:border-neon/30 transition-colors duration-500">
+                            <div className="bg-white dark:bg-darkcard rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto git-scroll p-8 md:p-10 shadow-2xl relative border border-slate-200 dark:border-neon/30 transition-colors duration-500">
                                 <button onClick={() => setShowLogModal(false)} className="absolute top-8 right-8 text-slate-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon transition-colors"><Icon name="X" size={24}/></button>
                                 
                                 <div className="text-center mb-10">
