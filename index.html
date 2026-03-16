@@ -3,22 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bancário Pro FGV - Planejador</title>
+    <title>Bancário Pro FGV - Cloud Planner & SRS</title>
     <!-- React e Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Core (Data) -->
+    <!-- Lucide Core -->
     <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.js"></script>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js" type="module"></script>
     
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-        .animate-fade-in { animation: fadeIn 0.4s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        /* Esconder scrollbar mas manter funcionalidade */
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -26,202 +29,316 @@
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
 
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Configuration
+        const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'study-fgv-pro-cloud';
+
+        // Expor funções e instâncias para o escopo global de forma organizada
+        window.fb = {
+            auth,
+            db,
+            appId,
+            signInAnonymously,
+            onAuthStateChanged,
+            doc,
+            setDoc,
+            getDoc,
+            collection,
+            onSnapshot,
+            query,
+            where,
+            addDoc
+        };
+    </script>
+
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        /**
-         * Componente Icon Robusto
-         * Bypassa problemas de UMD do lucide-react renderizando o SVG diretamente do lucide-core
-         */
         const Icon = ({ name, size = 20, className = "" }) => {
             const [svgContent, setSvgContent] = useState("");
-
             useEffect(() => {
-                // Tenta pegar o ícone do objeto global 'lucide'
-                const icon = window.lucide?.icons[name.toLowerCase()] || 
-                             window.lucide?.icons[name] || 
-                             window.lucide?.icons['help-circle'];
-                
+                const icon = window.lucide?.icons[name.toLowerCase()] || window.lucide?.icons[name] || window.lucide?.icons['help-circle'];
                 if (icon) {
-                    // icon[2] contém a estrutura do SVG no lucide-core
                     const content = icon[2].map(tag => {
                         const [tagName, attrs] = tag;
-                        const attrStr = Object.entries(attrs)
-                            .map(([k, v]) => `${k.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}="${v}"`)
-                            .join(' ');
+                        const attrStr = Object.entries(attrs).map(([k, v]) => `${k.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}="${v}"`).join(' ');
                         return `<${tagName} ${attrStr}></${tagName}>`;
                     }).join('');
                     setSvgContent(content);
                 }
             }, [name]);
-
             return (
-                <svg
-                    width={size}
-                    height={size}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className={className}
-                    dangerouslySetInnerHTML={{ __html: svgContent }}
-                />
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} dangerouslySetInnerHTML={{ __html: svgContent }} />
             );
         };
 
         const App = () => {
-            // Persistência
-            const [studyLogs, setStudyLogs] = useState(() => {
-                try {
-                    const saved = localStorage.getItem('bancario_study_logs');
-                    return saved ? JSON.parse(saved) : [];
-                } catch (e) { return []; }
-            });
+            const [user, setUser] = useState(null);
+            const [studyLogs, setStudyLogs] = useState([]);
+            const [completedTasks, setCompletedTasks] = useState({});
+            const [stopPoints, setStopPoints] = useState({});
+            const [loading, setLoading] = useState(true);
 
-            const [completedTasks, setCompletedTasks] = useState(() => {
-                try {
-                    const saved = localStorage.getItem('bancario_completed_tasks');
-                    return saved ? JSON.parse(saved) : {};
-                } catch (e) { return {}; }
-            });
-
-            // Estados de Controle
-            const [currentCycleDay, setCurrentCycleDay] = useState(1);
+            const [currentDayNumber, setCurrentDayNumber] = useState(1);
             const [activeTab, setActiveTab] = useState('hoje');
+            const [dashSubTab, setDashSubTab] = useState('horas');
             const [timerSeconds, setTimerSeconds] = useState(0);
             const [isTimerRunning, setIsTimerRunning] = useState(false);
-            const [deletingId, setDeletingId] = useState(null);
             
-            // Formulário
-            const [formData, setFormData] = useState({ 
-                materia: 'Português', 
-                assunto: '', 
-                horas: '', 
-                acertos: '', 
-                erros: '' 
+            const [showLogModal, setShowLogModal] = useState(false);
+            const [activeTaskForLog, setActiveTaskForLog] = useState(null);
+            const [logForm, setLogForm] = useState({ 
+                assunto: '', h: '00', m: '00', s: '00', 
+                total: '', acertos: '', anotacoes: '', 
+                tipoEstudo: 'exercicios', tipoTeoria: 'pdf', 
+                pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '' 
             });
 
+            // 1. Auth Init
             useEffect(() => {
-                localStorage.setItem('bancario_study_logs', JSON.stringify(studyLogs));
+                const initAuth = async () => {
+                    try {
+                        if (window.fb) {
+                            await window.fb.signInAnonymously(window.fb.auth);
+                            window.fb.onAuthStateChanged(window.fb.auth, (u) => {
+                                setUser(u);
+                            });
+                        }
+                    } catch (e) { console.error("Auth Error", e); }
+                };
+                initAuth();
+            }, []);
+
+            // 2. Data Fetching (Firestore)
+            useEffect(() => {
+                if (!user || !window.fb) return;
+
+                const logsRef = window.fb.collection(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs');
+                const unsubLogs = window.fb.onSnapshot(logsRef, (snapshot) => {
+                    setStudyLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setLoading(false);
+                }, (err) => console.error(err));
+
+                const metaRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'userMeta', 'state');
+                const unsubMeta = window.fb.onSnapshot(metaRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        setCompletedTasks(data.completedTasks || {});
+                        setStopPoints(data.stopPoints || {});
+                        if (data.currentDayNumber) setCurrentDayNumber(data.currentDayNumber);
+                    }
+                });
+
+                return () => { unsubLogs(); unsubMeta(); };
+            }, [user]);
+
+            const updateCloudState = async (newCompleted, newStops, dayNum) => {
+                if (!user || !window.fb) return;
+                const metaRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'userMeta', 'state');
+                await window.fb.setDoc(metaRef, { 
+                    completedTasks: newCompleted || completedTasks, 
+                    stopPoints: newStops || stopPoints,
+                    currentDayNumber: dayNum || currentDayNumber
+                }, { merge: true });
+            };
+
+            const secondsToHMS = (totalSeconds) => {
+                const h = Math.floor(totalSeconds / 3600);
+                const m = Math.floor((totalSeconds % 3600) / 60);
+                const s = totalSeconds % 60;
+                return { 
+                    h: h.toString().padStart(2, '0'), 
+                    m: m.toString().padStart(2, '0'), 
+                    s: s.toString().padStart(2, '0') 
+                };
+            };
+
+            const formatTimeString = (s) => {
+                const { h, m, s: sec } = secondsToHMS(s);
+                return `${h}:${m}:${sec}`;
+            };
+
+            const scheduleCycleBase = [
+                { day: 1, type: "Folga", tasks: [
+                    { id: "ma", title: "Português", cat: "Estudo", materia: "Português" },
+                    { id: "mb", title: "Conhecimentos Bancários", cat: "Estudo", materia: "Conhecimentos Bancários" }
+                ], tips: "FGV Português: Foco total na intenção comunicativa do autor." },
+                { day: 2, type: "Trabalho", tasks: [
+                    { id: "mc", title: "Matemática", cat: "Estudo", materia: "Matemática" }
+                ], tips: "Matemática FGV: A banca adora lógica de 'verdade e mentira'." },
+                { day: 3, type: "Folga", tasks: [
+                    { id: "md", title: "Vendas e Negociação", cat: "Estudo", materia: "Vendas e Negociação" },
+                    { id: "me", title: "Informática", cat: "Estudo", materia: "Informática" }
+                ], tips: "Informática: Revise segurança do Windows e ferramentas Office." },
+                { day: 4, type: "Trabalho", tasks: [
+                    { id: "mf", title: "Inglês", cat: "Estudo", materia: "Inglês" }
+                ], tips: "Inglês: Identifique 'false friends' comuns na FGV." },
+                { day: 5, type: "Folga", tasks: [
+                    { id: "ma_av", title: "Português (Avanço)", cat: "Avanço", materia: "Português" },
+                    { id: "mb_av", title: "Conhecimentos Bancários (Avanço)", cat: "Avanço", materia: "Conhecimentos Bancários" }
+                ], tips: "Bancários: Atenção ao PIX e novidades do Open Finance." },
+                { day: 6, type: "Trabalho", tasks: [
+                    { id: "mc_av", title: "Matemática (Avanço)", cat: "Avanço", materia: "Matemática" }
+                ], tips: "Matemática: Pratique probabilidade básica." },
+                { day: 7, type: "Livre", tasks: [
+                    { id: "sim", title: "Simulado Completo", cat: "Avaliação", materia: "Simulados" },
+                    { id: "red", title: "Redação", cat: "Avaliação", materia: "Redação" }
+                ], tips: "Redação: Estruture o texto em 4 parágrafos claros." }
+            ];
+
+            const currentDayTasks = useMemo(() => {
+                const cycleIdx = (currentDayNumber - 1) % 7;
+                const baseTasks = scheduleCycleBase[cycleIdx].tasks;
+                const reviews = [];
+
+                const gaps = [1, 7, 15, 30];
+                gaps.forEach(gap => {
+                    const targetDay = currentDayNumber - gap;
+                    if (targetDay > 0) {
+                        const subjectsOnTarget = studyLogs
+                            .filter(log => log.recordedDay === targetDay)
+                            .map(log => log.materia);
+                        
+                        [...new Set(subjectsOnTarget)].forEach(sub => {
+                            reviews.push({
+                                id: `rev-${gap}-${sub.toLowerCase()}`,
+                                title: `Revisão ${gap} Dias: ${sub}`,
+                                cat: "Revisão",
+                                materia: sub
+                            });
+                        });
+                    }
+                });
+
+                return [...reviews, ...baseTasks];
+            }, [currentDayNumber, studyLogs]);
+
+            const currentDayMeta = scheduleCycleBase[(currentDayNumber - 1) % 7];
+
+            const metrics = useMemo(() => {
+                const logsByMateria = studyLogs.reduce((acc, log) => {
+                    if (!acc[log.materia]) acc[log.materia] = { totalSeconds: 0, acertos: 0, erros: 0, assuntos: [] };
+                    acc[log.materia].totalSeconds += log.totalSeconds;
+                    acc[log.materia].acertos += log.acertos;
+                    acc[log.materia].erros += log.erros;
+                    acc[log.materia].assuntos.push({ assunto: log.assunto, date: log.fullDate });
+                    return acc;
+                }, {});
+
+                return {
+                    totalSeconds: studyLogs.reduce((a, b) => a + (b.totalSeconds || 0), 0),
+                    totalAcertos: studyLogs.reduce((a, b) => a + (b.acertos || 0), 0),
+                    totalErros: studyLogs.reduce((a, b) => a + (b.erros || 0), 0),
+                    diasEstudados: new Set(studyLogs.map(l => l.fullDate)).size,
+                    logsByMateria
+                };
             }, [studyLogs]);
 
             useEffect(() => {
-                localStorage.setItem('bancario_completed_tasks', JSON.stringify(completedTasks));
-            }, [completedTasks]);
-
-            // Cronômetro
-            useEffect(() => {
                 let interval = null;
-                if (isTimerRunning) {
-                    interval = setInterval(() => setTimerSeconds(s => s + 1), 1000);
-                } else {
-                    clearInterval(interval);
-                }
+                if (isTimerRunning) interval = setInterval(() => setTimerSeconds(s => s + 1), 1000);
+                else clearInterval(interval);
                 return () => clearInterval(interval);
             }, [isTimerRunning]);
 
-            const formatTime = (s) => {
-                const h = Math.floor(s / 3600);
-                const m = Math.floor((s % 3600) / 60);
-                const sec = s % 60;
-                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+            const handleToggleTask = (task) => {
+                const taskKey = `day-${currentDayNumber}-${task.id}`;
+                if (!completedTasks[taskKey]) {
+                    setActiveTaskForLog({ ...task, key: taskKey });
+                    const { h, m, s } = secondsToHMS(timerSeconds);
+                    setLogForm({ 
+                        assunto: '', h, m, s, total: '', acertos: '', anotacoes: '', 
+                        tipoEstudo: 'exercicios', tipoTeoria: 'pdf', 
+                        pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '' 
+                    });
+                    setShowLogModal(true);
+                } else {
+                    const newTasks = { ...completedTasks };
+                    delete newTasks[taskKey];
+                    updateCloudState(newTasks);
+                }
             };
 
-            const materias = ["Português", "Conhecimentos Bancários", "Matemática", "Vendas e Negociação", "Informática", "Inglês", "Redação"];
+            const submitLog = async () => {
+                if (!user || !window.fb) return;
 
-            const schedule = [
-                { day: 1, type: "Folga", hours: 6, tasks: [
-                    { id: "d1-r1", title: "Revisão de 1 dia", cat: "Revisão" },
-                    { id: "d1-r7", title: "Revisão de 7 dias", cat: "Revisão" },
-                    { id: "d1-ma", title: "Matéria A (Português)", detail: "Teoria e Exercícios FGV", cat: "Estudo" },
-                    { id: "d1-mb", title: "Matéria B (Bancários)", detail: "Teoria e Exercícios", cat: "Estudo" }
-                ], tips: "FGV Português: A banca prioriza a 'reescritura de frases' e coerência." },
-                { day: 2, type: "Trabalho", hours: 3, tasks: [
-                    { id: "d2-r1", title: "Revisão de 1 dia", cat: "Revisão" },
-                    { id: "d2-mc", title: "Matéria C (Matemática)", detail: "Exercícios de Base", cat: "Estudo" }
-                ], tips: "Matemática FGV: Foque em raciocínio lógico e diagramas de Venn." },
-                { day: 3, type: "Folga", hours: 6, tasks: [
-                    { id: "d3-r1", title: "Revisão de 1 dia", cat: "Revisão" },
-                    { id: "d3-r7", title: "Revisão de 7 dias", cat: "Revisão" },
-                    { id: "d3-md", title: "Matéria D (Vendas)", cat: "Estudo" },
-                    { id: "d3-me", title: "Matéria E (Informática)", cat: "Estudo" }
-                ], tips: "Informática: A FGV ama cobrar as ferramentas de segurança do Windows." },
-                { day: 4, type: "Trabalho", hours: 3, tasks: [
-                    { id: "d4-r1", title: "Revisão de 1 dia", cat: "Revisão" },
-                    { id: "d4-mf", title: "Matéria F (Inglês)", cat: "Estudo" }
-                ], tips: "Inglês: Atenção a advérbios de frequência e conectores lógicos." },
-                { day: 5, type: "Folga", hours: 6, tasks: [
-                    { id: "d5-r1", title: "Revisão de 1 dia", cat: "Revisão" },
-                    { id: "d5-ma", title: "Avanço Português", cat: "Avanço" },
-                    { id: "d5-mb", title: "Avanço Bancários", cat: "Avanço" }
-                ], tips: "Bancários: Revise as funções do Banco Central e as metas de inflação." },
-                { day: 6, type: "Trabalho", hours: 3, tasks: [
-                    { id: "d6-r1", title: "Revisão de 1 dia", cat: "Revisão" },
-                    { id: "d6-mc", title: "Avanço Matemática", cat: "Avanço" }
-                ], tips: "Matemática: Pratique probabilidade e estatística básica." },
-                { day: 7, type: "Livre", hours: 0, tasks: [
-                    { id: "d7-sim", title: "Simulado Completo", cat: "Avaliação" },
-                    { id: "d7-red", title: "Redação", cat: "Avaliação" }
-                ], tips: "Redação: Use conectores formais (Ademais, Outrossim, Portanto)." }
-            ];
-
-            const currentDay = schedule[currentCycleDay - 1];
-
-            // Métricas
-            const metrics = useMemo(() => {
-                const h = studyLogs.reduce((a, b) => a + (b.horas || 0), 0);
-                const ac = studyLogs.reduce((a, b) => a + (b.acertos || 0), 0);
-                const er = studyLogs.reduce((a, b) => a + (b.erros || 0), 0);
-                const total = ac + er;
-                return {
-                    horas: h.toFixed(1),
-                    aproveitamento: total > 0 ? ((ac / total) * 100).toFixed(1) : "0",
-                    questoes: total,
-                    acertos: ac,
-                    erros: er
+                const pad = (v) => v.toString().padStart(2, '0');
+                const finalH = pad(logForm.h || 0);
+                const finalM = pad(logForm.m || 0);
+                const finalS = pad(logForm.s || 0);
+                const totalSec = (parseInt(finalH) * 3600) + (parseInt(finalM) * 60) + parseInt(finalS);
+                const acertos = parseInt(logForm.acertos || 0);
+                const totalQ = parseInt(logForm.total || 0);
+                
+                const logData = {
+                    recordedDay: currentDayNumber,
+                    fullDate: new Date().toLocaleDateString('pt-BR'),
+                    materia: activeTaskForLog.materia,
+                    assunto: logForm.assunto,
+                    totalSeconds: totalSec,
+                    timeStr: `${finalH}:${finalM}:${finalS}`,
+                    acertos,
+                    erros: Math.max(0, totalQ - acertos),
+                    anotacoes: logForm.anotacoes,
+                    tipoEstudo: logForm.tipoEstudo,
+                    taskKey: activeTaskForLog.key
                 };
-            }, [studyLogs]);
 
-            const handleAddLog = (e) => {
-                e.preventDefault();
-                if (!formData.assunto || !formData.horas) return;
-                const newLog = {
-                    id: Date.now(),
-                    date: new Date().toLocaleDateString('pt-BR'),
-                    ...formData,
-                    horas: parseFloat(formData.horas),
-                    acertos: parseInt(formData.acertos || 0),
-                    erros: parseInt(formData.erros || 0)
-                };
-                setStudyLogs([newLog, ...studyLogs]);
-                setFormData({ materia: 'Português', assunto: '', horas: '', acertos: '', erros: '' });
+                const newStops = { ...stopPoints };
+                if (logForm.tipoEstudo === 'teoria') {
+                    newStops[activeTaskForLog.materia] = logForm.tipoTeoria === 'pdf' 
+                        ? { type: 'pdf', value: `Pág. ${logForm.pdfPagina}` }
+                        : { type: 'video', value: `Aula ${logForm.videoAula} (${logForm.videoMinuto}:${logForm.videoSegundo})` };
+                }
+
+                // Save to Firebase
+                const logsCol = window.fb.collection(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs');
+                await window.fb.addDoc(logsCol, logData);
+                
+                const newTasks = { ...completedTasks, [activeTaskForLog.key]: true };
+                updateCloudState(newTasks, newStops);
+                
+                setShowLogModal(false);
+                setTimerSeconds(0);
+                setIsTimerRunning(false);
             };
 
-            const toggleTask = (tid) => {
-                setCompletedTasks(prev => ({...prev, [tid]: !prev[tid]}));
+            const handleTimeInputChange = (field, value) => {
+                const cleanValue = value.replace(/\D/g, '').slice(0, 2);
+                setLogForm(prev => ({ ...prev, [field]: cleanValue }));
             };
+
+            if (loading) return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-indigo-400">
+                    <div className="flex flex-col items-center gap-4">
+                        <Icon name="Zap" size={48} className="animate-pulse" />
+                        <p className="font-black uppercase tracking-widest text-[10px]">Sincronizando com a Nuvem...</p>
+                    </div>
+                </div>
+            );
 
             return (
-                <div className="min-h-screen flex flex-col">
-                    {/* Header */}
-                    <header className="bg-indigo-950 text-white p-6 sticky top-0 z-40 shadow-lg">
+                <div className="min-h-screen flex flex-col pb-24">
+                    <header className="bg-slate-900 text-white p-6 sticky top-0 z-40 shadow-xl border-b border-white/5">
                         <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-indigo-500 rounded-xl shadow-lg"><Icon name="Zap" className="text-white" /></div>
+                                <div className="p-2 bg-indigo-600 rounded-xl shadow-lg"><Icon name="Zap" /></div>
                                 <div>
-                                    <h1 className="text-xl font-black tracking-tight italic">BANCÁRIO <span className="text-indigo-400">FGV</span></h1>
-                                    <p className="text-indigo-300 text-[10px] font-bold uppercase tracking-widest">Dashboard de Metas</p>
+                                    <h1 className="text-xl font-black italic tracking-tighter uppercase leading-none">FGV PRO <span className="text-indigo-400 italic">Master</span></h1>
+                                    <p className="text-slate-500 text-[9px] font-black uppercase tracking-[0.3em] mt-1 italic">Gestão de Conteúdo Cloud</p>
                                 </div>
                             </div>
-                            <nav className="flex bg-indigo-900/60 p-1 rounded-2xl border border-indigo-800">
+                            <nav className="flex bg-slate-800 p-1 rounded-2xl border border-slate-700">
                                 {['hoje', 'dashboard', 'ciclo'].map(tab => (
-                                    <button 
-                                        key={tab}
-                                        onClick={() => setActiveTab(tab)}
-                                        className={`px-5 py-2 rounded-xl text-xs font-black uppercase transition-all ${activeTab === tab ? 'bg-indigo-500 text-white' : 'text-indigo-400 hover:text-white'}`}
-                                    >
+                                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase transition-all ${activeTab === tab ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
                                         {tab}
                                     </button>
                                 ))}
@@ -233,76 +350,61 @@
                         {activeTab === 'hoje' && (
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                                 <div className="lg:col-span-2 space-y-6">
-                                    <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-                                        <div className="flex items-center justify-between mb-6">
+                                    <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-200">
+                                        <div className="flex items-center justify-between mb-8">
                                             <div>
-                                                <h2 className="text-2xl font-black text-slate-800">Dia {currentDay.day}</h2>
-                                                <p className="text-sm font-bold text-indigo-600 uppercase tracking-tighter">{currentDay.type} • Meta: {currentDay.hours}h</p>
+                                                <h2 className="text-3xl font-black text-slate-800 tracking-tighter italic">Dia {currentDayNumber}</h2>
+                                                <p className="text-sm font-bold text-indigo-600 uppercase tracking-tighter italic">{currentDayMeta.type}</p>
                                             </div>
                                             <div className="flex gap-2">
-                                                <button onClick={() => setCurrentCycleDay(d => d > 1 ? d - 1 : 7)} className="p-2 bg-slate-50 text-slate-400 hover:text-indigo-500 rounded-full transition-colors"><Icon name="ChevronLeft"/></button>
-                                                <button onClick={() => setCurrentCycleDay(d => d < 7 ? d + 1 : 1)} className="p-2 bg-slate-50 text-slate-400 hover:text-indigo-500 rounded-full transition-colors"><Icon name="ChevronRight"/></button>
+                                                <button onClick={() => { const d = currentDayNumber > 1 ? currentDayNumber - 1 : 1; setCurrentDayNumber(d); updateCloudState(null, null, d); }} className="p-3 bg-slate-100 text-slate-400 hover:text-indigo-600 rounded-2xl transition-all active:scale-95"><Icon name="ChevronLeft"/></button>
+                                                <button onClick={() => { const d = currentDayNumber + 1; setCurrentDayNumber(d); updateCloudState(null, null, d); }} className="p-3 bg-slate-100 text-slate-400 hover:text-indigo-600 rounded-2xl transition-all active:scale-95"><Icon name="ChevronRight"/></button>
                                             </div>
                                         </div>
-                                        <div className="space-y-3">
-                                            {currentDay.tasks.map(task => (
-                                                <div 
-                                                    key={task.id} 
-                                                    onClick={() => toggleTask(task.id)}
-                                                    className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer ${completedTasks[task.id] ? 'bg-emerald-50 border-emerald-100 opacity-60' : 'bg-white border-slate-50 hover:border-indigo-100 shadow-sm'}`}
-                                                >
-                                                    <Icon 
-                                                        name={completedTasks[task.id] ? "CheckCircle2" : "Circle"} 
-                                                        className={completedTasks[task.id] ? "text-emerald-500" : "text-slate-200"} 
-                                                    />
-                                                    <div>
-                                                        <p className={`font-bold text-sm ${completedTasks[task.id] ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.title}</p>
-                                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{task.cat}</p>
+                                        
+                                        <div className="space-y-4">
+                                            {currentDayTasks.map(task => {
+                                                const tKey = `day-${currentDayNumber}-${task.id}`;
+                                                const lastStop = stopPoints[task.materia];
+                                                const isDone = completedTasks[tKey];
+                                                return (
+                                                    <div key={task.id} onClick={() => handleToggleTask(task)} className={`group flex items-center gap-5 p-5 rounded-[2rem] border-2 transition-all cursor-pointer ${isDone ? 'bg-emerald-50 border-emerald-100 opacity-60' : 'bg-white border-slate-50 hover:border-indigo-200 shadow-sm'}`}>
+                                                        <div className={`p-2.5 rounded-2xl ${isDone ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-100 text-slate-300 group-hover:text-indigo-400'}`}>
+                                                            <Icon name={isDone ? "Check" : "Circle"} size={26} />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <p className={`font-black text-lg ${isDone ? 'line-through text-slate-400' : 'text-slate-800 uppercase italic'}`}>{task.title}</p>
+                                                            <div className="flex flex-wrap items-center gap-3 mt-1">
+                                                                <span className={`text-[10px] font-black uppercase tracking-widest ${task.cat === 'Revisão' ? 'text-indigo-500' : 'text-slate-400'}`}>{task.cat}</span>
+                                                                {lastStop && !isDone && (
+                                                                    <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 border border-amber-100 rounded-full">
+                                                                        <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse"></span>
+                                                                        <span className="text-[9px] font-black text-amber-700 uppercase tracking-tighter">Ponto de Parada: {lastStop.value}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
                                     </div>
-                                    <div className="bg-indigo-50 rounded-2xl p-5 border-l-4 border-indigo-500 flex gap-4">
-                                        <Icon name="Info" className="text-indigo-500 shrink-0" />
-                                        <p className="text-sm text-indigo-900 leading-relaxed italic">"{currentDay.tips}"</p>
+                                    <div className="bg-indigo-50 rounded-2xl p-6 border-l-4 border-indigo-600 flex gap-4">
+                                        <Icon name="Info" className="text-indigo-600 shrink-0 mt-1" />
+                                        <p className="text-sm text-indigo-900 leading-relaxed font-medium italic">"{currentDayMeta.tips}"</p>
                                     </div>
                                 </div>
 
                                 <div className="space-y-6">
-                                    <div className="bg-slate-900 rounded-[2rem] p-8 text-white shadow-2xl relative overflow-hidden">
-                                        <div className="absolute -top-4 -right-4 opacity-10"><Icon name="Clock" size={120} /></div>
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-indigo-400 mb-4">Cronômetro de Foco</h3>
-                                        <div className="text-5xl font-mono font-bold mb-8 tracking-tighter tabular-nums">{formatTime(timerSeconds)}</div>
-                                        <div className="grid grid-cols-2 gap-3 relative z-10">
-                                            <button 
-                                                onClick={() => setIsTimerRunning(!isTimerRunning)} 
-                                                className={`py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all ${isTimerRunning ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
-                                            >
-                                                <Icon name={isTimerRunning ? "Pause" : "Play"} size={16}/> {isTimerRunning ? 'Pausar' : 'Iniciar'}
+                                    <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden border-b-8 border-indigo-600">
+                                        <div className="absolute -top-10 -right-10 opacity-5"><Icon name="Clock" size={160} /></div>
+                                        <h3 className="text-xs font-black uppercase tracking-[0.3em] text-indigo-400 mb-6 italic">Temporizador Focado</h3>
+                                        <div className="text-6xl font-mono font-bold mb-12 tracking-tighter tabular-nums text-white/90">{formatTimeString(timerSeconds)}</div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <button onClick={() => setIsTimerRunning(!isTimerRunning)} className={`py-5 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl transition-all active:scale-95 ${isTimerRunning ? 'bg-rose-500 shadow-rose-900/40' : 'bg-indigo-600 shadow-indigo-900/40 hover:bg-indigo-700'}`}>
+                                                <Icon name={isTimerRunning ? "Pause" : "Play"} size={16}/> {isTimerRunning ? 'Pausar' : 'Focar'}
                                             </button>
-                                            <button onClick={() => setTimerSeconds(0)} className="bg-slate-800 py-4 rounded-2xl font-black flex items-center justify-center hover:bg-slate-700"><Icon name="RotateCcw" size={16}/></button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest">Resumo de Hoje</h4>
-                                            <Icon name="Target" className="text-indigo-500" size={16} />
-                                        </div>
-                                        <div className="space-y-4">
-                                            <div>
-                                                <div className="flex justify-between text-xs font-bold mb-1">
-                                                    <span>Tarefas Concluídas</span>
-                                                    <span>{currentDay.tasks.filter(t => completedTasks[t.id]).length} / {currentDay.tasks.length}</span>
-                                                </div>
-                                                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                                                    <div 
-                                                        className="bg-emerald-500 h-full transition-all duration-500" 
-                                                        style={{width: `${(currentDay.tasks.filter(t => completedTasks[t.id]).length / currentDay.tasks.length) * 100}%`}}
-                                                    ></div>
-                                                </div>
-                                            </div>
+                                            <button onClick={() => setTimerSeconds(0)} className="bg-slate-800/50 py-5 rounded-2xl font-black flex items-center justify-center hover:bg-slate-700 transition-colors"><Icon name="RotateCcw" size={18}/></button>
                                         </div>
                                     </div>
                                 </div>
@@ -311,218 +413,89 @@
 
                         {activeTab === 'dashboard' && (
                             <div className="space-y-8 animate-fade-in">
-                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 w-fit">
                                     {[
-                                        { label: "Horas Estudadas", val: `${metrics.horas}h`, color: "text-slate-800", sub: "Tempo Total" },
-                                        { label: "Aproveitamento", val: `${metrics.aproveitamento}%`, color: "text-emerald-600", sub: "Taxa de Acertos" },
-                                        { label: "Questões", val: metrics.questoes, color: "text-indigo-600", sub: "Total Resolvido" },
-                                        { label: "Erros", val: metrics.erros, color: "text-rose-500", sub: "Pontos de Atenção" }
-                                    ].map((m, i) => (
-                                        <div key={i} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{m.label}</p>
-                                            <h3 className={`text-2xl font-black ${m.color}`}>{m.val}</h3>
-                                            <p className="text-[9px] font-bold text-slate-300 uppercase mt-1">{m.sub}</p>
-                                        </div>
+                                        { id: 'horas', label: 'Horas', icon: 'Clock' },
+                                        { id: 'dias', label: 'Dias', icon: 'Calendar' },
+                                        { id: 'desempenho', label: 'Matérias', icon: 'Target' }
+                                    ].map(sub => (
+                                        <button key={sub.id} onClick={() => setDashSubTab(sub.id)} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${dashSubTab === sub.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+                                            <Icon name={sub.icon} size={14} /> {sub.label}
+                                        </button>
                                     ))}
                                 </div>
 
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                                        <h3 className="text-lg font-black mb-6 flex items-center gap-2">
-                                            <Icon name="PlusCircle" className="text-indigo-500" /> Registrar Sessão
-                                        </h3>
-                                        <form onSubmit={handleAddLog} className="space-y-4">
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Matéria</label>
-                                                    <select 
-                                                        className="w-full bg-slate-50 p-3 rounded-xl text-sm font-bold border-none outline-none focus:ring-2 ring-indigo-500 transition-all"
-                                                        value={formData.materia}
-                                                        onChange={e => setFormData({...formData, materia: e.target.value})}
-                                                    >
-                                                        {materias.map(m => <option key={m} value={m}>{m}</option>)}
-                                                    </select>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Horas</label>
-                                                    <input 
-                                                        type="number" step="0.1" placeholder="Ex: 2.5"
-                                                        className="w-full bg-slate-50 p-3 rounded-xl text-sm font-bold border-none outline-none focus:ring-2 ring-indigo-500"
-                                                        value={formData.horas}
-                                                        onChange={e => setFormData({...formData, horas: e.target.value})}
-                                                    />
-                                                </div>
+                                {dashSubTab === 'horas' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
+                                        <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col justify-center text-center">
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Carga Horária Acumulada</p>
+                                            <h3 className="text-4xl font-black text-slate-800 tracking-tighter italic">{formatTimeString(metrics.totalSeconds)}</h3>
+                                        </div>
+                                        <div className="md:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 italic">Últimos Registros Sincronizados</h4>
+                                            <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar pr-2">
+                                                {studyLogs.sort((a,b) => b.id - a.id).map(log => (
+                                                    <div key={log.id} className="p-5 bg-slate-50 rounded-3xl border border-slate-100 hover:border-indigo-200 transition-all">
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div>
+                                                                <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">{log.fullDate}</span>
+                                                                <h5 className="font-black text-slate-800 uppercase italic leading-tight">{log.materia}</h5>
+                                                            </div>
+                                                            <p className="font-mono font-black text-slate-900 text-lg leading-none">{log.timeStr}</p>
+                                                        </div>
+                                                        <p className="text-xs font-bold text-slate-500 italic">"{log.assunto || 'Sem assunto definido'}"</p>
+                                                    </div>
+                                                ))}
+                                                {studyLogs.length === 0 && <p className="text-center text-slate-300 italic py-10 font-black tracking-widest text-[10px]">Sem dados em nuvem.</p>}
                                             </div>
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Assunto Específico</label>
-                                                <input 
-                                                    type="text" placeholder="Ex: Concordância Nominal FGV"
-                                                    className="w-full bg-slate-50 p-3 rounded-xl text-sm font-bold border-none outline-none focus:ring-2 ring-indigo-500"
-                                                    value={formData.assunto}
-                                                    onChange={e => setFormData({...formData, assunto: e.target.value})}
-                                                />
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-black text-emerald-600 uppercase ml-1">Acertos</label>
-                                                    <input 
-                                                        type="number" placeholder="0"
-                                                        className="w-full bg-emerald-50 p-3 rounded-xl text-sm font-bold border-none outline-none text-emerald-700"
-                                                        value={formData.acertos}
-                                                        onChange={e => setFormData({...formData, acertos: e.target.value})}
-                                                    />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-black text-rose-500 uppercase ml-1">Erros</label>
-                                                    <input 
-                                                        type="number" placeholder="0"
-                                                        className="w-full bg-rose-50 p-3 rounded-xl text-sm font-bold border-none outline-none text-rose-700"
-                                                        value={formData.erros}
-                                                        onChange={e => setFormData({...formData, erros: e.target.value})}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <button className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 uppercase text-xs tracking-widest">
-                                                Salvar Progresso
-                                            </button>
-                                        </form>
+                                        </div>
                                     </div>
+                                )}
 
-                                    <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200 flex flex-col items-center justify-center">
-                                        <h3 className="text-lg font-black mb-1">Qualidade do Estudo</h3>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8 italic">Dados Consolidados</p>
-                                        
-                                        <div className="relative w-48 h-48">
-                                            <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90 drop-shadow-sm">
-                                                <circle cx="18" cy="18" r="16" fill="none" stroke="#f1f5f9" strokeWidth="3.5"></circle>
-                                                <circle 
-                                                    cx="18" cy="18" r="16" fill="none" 
-                                                    stroke="#10b981" strokeWidth="3.5" 
-                                                    strokeDasharray={`${metrics.aproveitamento} 100`}
-                                                    strokeLinecap="round"
-                                                    className="transition-all duration-1000 ease-out"
-                                                ></circle>
-                                            </svg>
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                                <span className="text-4xl font-black text-slate-800">{metrics.aproveitamento}%</span>
-                                                <span className="text-[9px] font-black text-emerald-600 uppercase">Aproveitamento</span>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="grid grid-cols-2 gap-10 mt-8">
-                                            <div className="text-center">
-                                                <p className="text-xl font-black text-emerald-600">{metrics.acertos}</p>
-                                                <p className="text-[9px] font-black text-slate-400 uppercase">Acertos</p>
-                                            </div>
-                                            <div className="text-center">
-                                                <p className="text-xl font-black text-rose-500">{metrics.erros}</p>
-                                                <p className="text-[9px] font-black text-slate-400 uppercase">Erros</p>
-                                            </div>
-                                        </div>
+                                {dashSubTab === 'desempenho' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
+                                        {Object.entries(metrics.logsByMateria).map(([materia, data]) => {
+                                            const totalQ = data.acertos + data.erros;
+                                            const perc = totalQ > 0 ? ((data.acertos / totalQ) * 100).toFixed(1) : 0;
+                                            return (
+                                                <div key={materia} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 group hover:shadow-xl transition-all">
+                                                    <div className="flex justify-between items-center mb-6">
+                                                        <h4 className="font-black text-slate-800 uppercase italic tracking-tighter text-lg">{materia}</h4>
+                                                        <span className="text-2xl font-black text-emerald-600 tracking-tighter">{perc}%</span>
+                                                    </div>
+                                                    <div className="w-full bg-slate-100 h-2.5 rounded-full mb-6 overflow-hidden flex">
+                                                        <div className="bg-indigo-600 h-full transition-all" style={{width: `${perc}%`}}></div>
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Temas abordados:</p>
+                                                        {data.assuntos.slice(-3).reverse().map((a, i) => (
+                                                            <div key={i} className="flex justify-between text-[11px] font-bold text-slate-500 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                                                <span className="truncate">{a.assunto}</span>
+                                                                <span className="text-[10px] font-black text-slate-300 ml-2">{a.date}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                </div>
-
-                                <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-                                    <div className="p-6 border-b border-slate-50 flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <Icon name="History" className="text-slate-400" />
-                                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Histórico de Estudos</h3>
-                                        </div>
-                                        <span className="text-[10px] font-bold text-slate-400">{studyLogs.length} registros</span>
-                                    </div>
-                                    <div className="overflow-x-auto no-scrollbar">
-                                        <table className="w-full text-left">
-                                            <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 tracking-tighter">
-                                                <tr>
-                                                    <th className="px-6 py-4">Data</th>
-                                                    <th className="px-6 py-4">Matéria / Assunto</th>
-                                                    <th className="px-6 py-4 text-center">Tempo</th>
-                                                    <th className="px-6 py-4 text-center">Desempenho</th>
-                                                    <th className="px-6 py-4 text-center">Ações</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-50">
-                                                {studyLogs.length === 0 ? (
-                                                    <tr>
-                                                        <td colSpan="5" className="px-6 py-12 text-center text-slate-400 text-sm italic">Nenhum estudo registrado ainda.</td>
-                                                    </tr>
-                                                ) : (
-                                                    studyLogs.map(log => (
-                                                        <tr key={log.id} className="hover:bg-indigo-50/30 transition-colors group">
-                                                            <td className="px-6 py-4">
-                                                                <p className="text-xs font-black text-slate-400">{log.date}</p>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <p className="text-xs font-black text-indigo-700 uppercase tracking-tight">{log.materia}</p>
-                                                                <p className="text-sm font-bold text-slate-700">{log.assunto}</p>
-                                                            </td>
-                                                            <td className="px-6 py-4 text-center font-mono text-xs font-bold text-slate-600">
-                                                                {log.horas}h
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="flex items-center justify-center gap-2">
-                                                                    <div className="text-center px-2 py-1 bg-emerald-50 rounded-lg">
-                                                                        <p className="text-[10px] font-black text-emerald-600">{log.acertos}</p>
-                                                                    </div>
-                                                                    <span className="text-slate-200">/</span>
-                                                                    <div className="text-center px-2 py-1 bg-rose-50 rounded-lg">
-                                                                        <p className="text-[10px] font-black text-rose-500">{log.erros}</p>
-                                                                    </div>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 text-center">
-                                                                {deletingId === log.id ? (
-                                                                    <div className="flex items-center justify-center gap-1">
-                                                                        <button 
-                                                                            onClick={() => {
-                                                                                setStudyLogs(studyLogs.filter(l => l.id !== log.id));
-                                                                                setDeletingId(null);
-                                                                            }}
-                                                                            className="px-2 py-1 bg-rose-500 text-white text-[10px] font-black rounded-lg uppercase"
-                                                                        >Excluir</button>
-                                                                        <button 
-                                                                            onClick={() => setDeletingId(null)}
-                                                                            className="px-2 py-1 bg-slate-200 text-slate-500 text-[10px] font-black rounded-lg uppercase"
-                                                                        >X</button>
-                                                                    </div>
-                                                                ) : (
-                                                                    <button 
-                                                                        onClick={() => setDeletingId(log.id)}
-                                                                        className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                                                                    >
-                                                                        <Icon name="Trash2" size={16}/>
-                                                                    </button>
-                                                                )}
-                                                            </td>
-                                                        </tr>
-                                                    ))
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                                )}
                             </div>
                         )}
-
+                        
                         {activeTab === 'ciclo' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-                                {schedule.map(day => (
-                                    <div 
-                                        key={day.day} 
-                                        onClick={() => { setCurrentCycleDay(day.day); setActiveTab('hoje'); }} 
-                                        className={`p-6 rounded-[2rem] border-2 transition-all cursor-pointer group hover:translate-y-[-4px] ${currentCycleDay === day.day ? 'border-indigo-500 bg-white shadow-xl' : 'border-transparent bg-white shadow-sm hover:shadow-md'}`}
-                                    >
-                                        <div className="flex justify-between items-center mb-4">
-                                            <span className={`text-[10px] font-black px-3 py-1 rounded-full ${currentCycleDay === day.day ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-400'}`}>DIA {day.day}</span>
-                                            <div className={`w-3 h-3 rounded-full ${day.type === 'Folga' ? 'bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.5)]' : day.type === 'Trabalho' ? 'bg-amber-400' : 'bg-emerald-400'}`}></div>
+                                {scheduleCycleBase.map(day => (
+                                    <div key={day.day} className={`p-8 rounded-[2.5rem] bg-white border-2 shadow-sm transition-all ${currentDayNumber % 7 === day.day % 7 ? 'border-indigo-600 shadow-xl ring-2 ring-indigo-50/50' : 'border-transparent opacity-80'}`}>
+                                        <div className="flex justify-between items-center mb-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                            <span>Configuração Ciclo {day.day}</span>
                                         </div>
-                                        <h4 className="font-black text-slate-800 text-lg mb-1">{day.type}</h4>
-                                        <p className="text-xs font-bold text-slate-400 mb-4 uppercase tracking-tighter italic">{day.hours > 0 ? `${day.hours} Horas de Estudo` : 'Dia de Simulado'}</p>
-                                        <div className="space-y-2">
+                                        <h4 className="font-black text-slate-800 text-2xl italic tracking-tighter uppercase">{day.type}</h4>
+                                        <div className="mt-8 space-y-3">
                                             {day.tasks.map(t => (
-                                                <div key={t.id} className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
-                                                    <div className={`w-1.5 h-1.5 rounded-full ${completedTasks[t.id] ? 'bg-emerald-400' : 'bg-slate-200'}`}></div>
-                                                    <span className={completedTasks[t.id] ? 'line-through opacity-50' : ''}>{t.title}</span>
+                                                <div key={t.id} className="flex items-center gap-3 text-xs font-bold text-slate-400 border-b border-slate-50 pb-2">
+                                                    <Icon name="Target" size={12} className="text-slate-200" />
+                                                    {t.title}
                                                 </div>
                                             ))}
                                         </div>
@@ -532,24 +505,103 @@
                         )}
                     </main>
 
-                    {/* Stats de Rodapé */}
-                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-md text-white px-8 py-4 rounded-[2rem] shadow-2xl flex items-center gap-8 border border-white/10 z-50">
-                        <div className="flex items-center gap-3">
-                            <div className="p-1.5 bg-emerald-500 rounded-lg"><Icon name="Trophy" size={14}/></div>
-                            <div className="flex flex-col">
-                                <span className="text-xs font-black leading-none">{metrics.aproveitamento}%</span>
-                                <span className="text-[8px] font-black uppercase text-emerald-400 tracking-tighter">Taxa Acerto</span>
+                    {/* Modal de Registro Cloud SRS */}
+                    {showLogModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fade-in">
+                            <div className="bg-white rounded-[2.5rem] w-full max-w-lg max-h-[90vh] overflow-y-auto no-scrollbar p-8 md:p-12 shadow-2xl relative border border-white/20">
+                                <button onClick={() => setShowLogModal(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-600 transition-colors"><Icon name="X" size={24}/></button>
+                                
+                                <div className="text-center mb-10">
+                                    <h2 className="text-3xl font-black text-slate-800 tracking-tighter italic uppercase leading-none italic">Registrar Missão</h2>
+                                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em] mt-3">{activeTaskForLog?.title}</p>
+                                </div>
+
+                                <div className="space-y-6">
+                                    <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-2">
+                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'exercicios'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'exercicios' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}>Questões</button>
+                                        <button onClick={() => setLogForm({...logForm, tipoEstudo: 'teoria'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${logForm.tipoEstudo === 'teoria' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}>Teoria</button>
+                                    </div>
+
+                                    {logForm.tipoEstudo === 'teoria' && (
+                                        <div className="p-6 bg-indigo-50/50 rounded-3xl space-y-6 border border-indigo-100 animate-fade-in">
+                                            <div className="flex items-center gap-4">
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input type="radio" className="w-4 h-4 text-indigo-600" checked={logForm.tipoTeoria === 'pdf'} onChange={() => setLogForm({...logForm, tipoTeoria: 'pdf'})} />
+                                                    <span className="text-xs font-black uppercase text-indigo-900">PDF</span>
+                                                </label>
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input type="radio" className="w-4 h-4 text-indigo-600" checked={logForm.tipoTeoria === 'video'} onChange={() => setLogForm({...logForm, tipoTeoria: 'video'})} />
+                                                    <span className="text-xs font-black uppercase text-indigo-900">Vídeo</span>
+                                                </label>
+                                            </div>
+                                            {logForm.tipoTeoria === 'pdf' ? (
+                                                <input type="number" placeholder="Em qual página parou?" className="w-full bg-white p-4 rounded-2xl text-sm font-black outline-none focus:ring-2 ring-indigo-500" value={logForm.pdfPagina} onChange={e => setLogForm({...logForm, pdfPagina: e.target.value})} />
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    <input type="text" placeholder="Nº da Aula (ex: Aula 05)" className="w-full bg-white p-4 rounded-2xl text-sm font-black outline-none" value={logForm.videoAula} onChange={e => setLogForm({...logForm, videoAula: e.target.value})} />
+                                                    <div className="flex gap-2 items-center">
+                                                        <input type="text" maxLength="2" placeholder="Min" className="w-full bg-white p-4 rounded-xl text-center font-mono font-bold" value={logForm.videoMinuto} onChange={e => handleTimeInputChange('videoMinuto', e.target.value)} />
+                                                        <span className="font-bold text-indigo-300">:</span>
+                                                        <input type="text" maxLength="2" placeholder="Seg" className="w-full bg-white p-4 rounded-xl text-center font-mono font-bold" value={logForm.videoSegundo} onChange={e => handleTimeInputChange('videoSegundo', e.target.value)} />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">Assunto Estudado</label>
+                                        <input type="text" placeholder="Ex: Crase FGV" className="w-full bg-slate-100 p-4 rounded-2xl text-sm font-black italic border-none outline-none focus:ring-2 ring-indigo-500" value={logForm.assunto} onChange={e => setLogForm({...logForm, assunto: e.target.value})} />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">Tempo Gasto</label>
+                                            <div className="flex gap-2 items-center">
+                                                <input type="text" maxLength="2" placeholder="HH" className="w-full bg-slate-100 p-4 rounded-xl text-center font-mono font-bold" value={logForm.h} onChange={e => handleTimeInputChange('h', e.target.value)} />
+                                                <span className="font-bold text-slate-300">:</span>
+                                                <input type="text" maxLength="2" placeholder="MM" className="w-full bg-slate-100 p-4 rounded-xl text-center font-mono font-bold" value={logForm.m} onChange={e => handleTimeInputChange('m', e.target.value)} />
+                                                <span className="font-bold text-slate-300">:</span>
+                                                <input type="text" maxLength="2" placeholder="SS" className="w-full bg-slate-100 p-4 rounded-xl text-center font-mono font-bold" value={logForm.s} onChange={e => handleTimeInputChange('s', e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">Exercícios</label>
+                                            <div className="flex gap-3">
+                                                <input type="number" placeholder="Total" className="w-full bg-slate-50 p-4 rounded-xl text-sm font-black" value={logForm.total} onChange={e => setLogForm({...logForm, total: e.target.value})} />
+                                                <input type="number" placeholder="Acertos" className="w-full bg-emerald-50 p-4 rounded-xl text-sm font-black text-emerald-700" value={logForm.acertos} onChange={e => setLogForm({...logForm, acertos: e.target.value})} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <textarea rows="2" placeholder="O que sentiu de mais difícil nesta sessão?" className="w-full bg-slate-100 p-4 rounded-2xl text-sm font-medium border-none outline-none focus:ring-2 ring-indigo-500" value={logForm.anotacoes} onChange={e => setLogForm({...logForm, anotacoes: e.target.value})}></textarea>
+
+                                    <button onClick={submitLog} className="w-full bg-indigo-600 text-white font-black py-5 rounded-[2rem] hover:bg-indigo-700 shadow-2xl transition-all active:scale-95 uppercase tracking-[0.3em] text-xs italic">Sincronizar Cloud</button>
+                                </div>
                             </div>
                         </div>
-                        <div className="w-px h-6 bg-slate-700"></div>
-                        <div className="flex items-center gap-3">
-                            <div className="p-1.5 bg-indigo-500 rounded-lg"><Icon name="Target" size={14}/></div>
-                            <div className="flex flex-col">
-                                <span className="text-xs font-black leading-none">{metrics.horas}h</span>
-                                <span className="text-[8px] font-black uppercase text-indigo-400 tracking-tighter">Total Horas</span>
+                    )}
+
+                    {/* Footer Stats Cloud */}
+                    {!showLogModal && (
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 backdrop-blur-md text-white px-8 py-4 rounded-[2rem] shadow-2xl flex items-center gap-10 border border-white/10 z-50 animate-fade-in">
+                            <div className="flex items-center gap-3">
+                                <div className="p-1.5 bg-emerald-500 rounded-lg text-white shadow-lg"><Icon name="Trophy" size={14}/></div>
+                                <div className="flex flex-col">
+                                    <span className="text-xs font-black leading-none italic">{((metrics.totalAcertos / (metrics.totalAcertos + metrics.totalErros || 1)) * 100).toFixed(1)}%</span>
+                                    <span className="text-[8px] font-black uppercase text-emerald-400 tracking-widest italic">Precisão Cloud</span>
+                                </div>
+                            </div>
+                            <div className="w-px h-8 bg-slate-700"></div>
+                            <div className="flex items-center gap-3">
+                                <div className="p-1.5 bg-indigo-500 rounded-lg text-white shadow-lg"><Icon name="Target" size={14}/></div>
+                                <div className="flex flex-col">
+                                    <span className="text-xs font-black leading-none italic tabular-nums">{formatTimeString(metrics.totalSeconds)}</span>
+                                    <span className="text-[8px] font-black uppercase text-indigo-400 tracking-widest italic">Horas Master</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             );
         };
