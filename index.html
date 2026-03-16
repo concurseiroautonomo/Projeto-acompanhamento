@@ -79,7 +79,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // SUA CONFIGURAÇÃO DO FIREBASE
         const userFirebaseConfig = {
@@ -100,7 +100,7 @@
             window.fb = {
                 auth, db, appId, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
                 GoogleAuthProvider, signInWithPopup,
-                doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc
+                doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc, deleteDoc
             };
         } catch (e) {
             console.error("Erro ao inicializar Firebase:", e);
@@ -174,11 +174,12 @@
             const [activeTab, setActiveTab] = useState('hoje');
             const [dashSubTab, setDashSubTab] = useState('dias');
             const [expandedMateria, setExpandedMateria] = useState(null); 
+            const [confirmDeleteId, setConfirmDeleteId] = useState(null); // Estado para controle de exclusão
             
             // FILTROS DASHBOARD QUESTÕES
             const [questionsFilter, setQuestionsFilter] = useState('7');
             const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
-            const [subjectFilter, setSubjectFilter] = useState('Todas'); // NOVO FILTRO DE DISCIPLINA
+            const [subjectFilter, setSubjectFilter] = useState('Todas as Matérias'); 
             
             const [timerSeconds, setTimerSeconds] = useState(0);
             const [isTimerRunning, setIsTimerRunning] = useState(false);
@@ -301,6 +302,18 @@
                     console.error("Erro ao salvar estado:", e);
                     if (e.message.includes('permission') || e.code === 'permission-denied') setError("firestore/permission-denied");
                     else alert("Aviso: Falha na gravação do estado. " + e.message);
+                }
+            };
+
+            // Função para excluir Log
+            const executeDelete = async (logId) => {
+                if (!user || !window.fb) return;
+                try {
+                    const logRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs', logId);
+                    await window.fb.deleteDoc(logRef);
+                    setConfirmDeleteId(null);
+                } catch (e) {
+                    console.error("Erro ao excluir log:", e);
                 }
             };
 
@@ -1067,8 +1080,23 @@
                                             </h4>
                                             <div className="space-y-4 max-h-[400px] overflow-y-auto git-scroll pr-4">
                                                 {studyLogs.sort((a,b) => b.timestamp - a.timestamp).map(log => (
-                                                    <div key={log.id} className="p-5 bg-slate-50 dark:bg-darkbg rounded-3xl border border-slate-200 dark:border-darkborder hover:border-blue-400 dark:hover:border-neon/40 transition-all group">
-                                                        <div className="flex justify-between items-start mb-3">
+                                                    <div key={log.id} className="p-5 bg-slate-50 dark:bg-darkbg rounded-3xl border border-slate-200 dark:border-darkborder hover:border-blue-400 dark:hover:border-neon/40 transition-all group relative">
+                                                        {confirmDeleteId === log.id ? (
+                                                            <div className="absolute top-4 right-4 flex items-center gap-2 bg-slate-200 dark:bg-[#1a1a1a] p-1.5 rounded-xl z-10 animate-fade-in shadow-lg">
+                                                                <span className="text-[10px] font-black text-rose-500 px-2 uppercase tracking-widest">Excluir?</span>
+                                                                <button onClick={() => executeDelete(log.id)} className="p-1.5 bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition-colors"><Icon name="Check" size={14} /></button>
+                                                                <button onClick={() => setConfirmDeleteId(null)} className="p-1.5 bg-slate-400 dark:bg-gray-700 text-white rounded-lg hover:bg-slate-500 dark:hover:bg-gray-600 transition-colors"><Icon name="X" size={14} /></button>
+                                                            </div>
+                                                        ) : (
+                                                            <button 
+                                                                onClick={() => setConfirmDeleteId(log.id)}
+                                                                className="absolute top-4 right-4 p-2 text-slate-300 dark:text-gray-600 hover:text-rose-500 dark:hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                                                title="Excluir registro"
+                                                            >
+                                                                <Icon name="Trash2" size={16} />
+                                                            </button>
+                                                        )}
+                                                        <div className="flex justify-between items-start mb-3 pr-10">
                                                             <div>
                                                                 <span className="text-[9px] font-black text-blue-500 dark:text-neon uppercase tracking-widest transition-colors duration-500">{log.fullDate}</span>
                                                                 <h5 className="font-black text-slate-800 dark:text-gray-200 uppercase italic leading-tight transition-colors duration-500">{log.materia}</h5>
