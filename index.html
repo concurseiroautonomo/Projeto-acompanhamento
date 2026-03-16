@@ -400,21 +400,21 @@
                     acc[log.materia].assuntos.push({ assunto: log.assunto, date: log.fullDate });
                     
                     const assuntoRaw = log.assunto || 'Sem assunto definido';
-                    const assuntoKey = assuntoRaw.trim().toLowerCase(); // Para agrupar indepentente de case
-                    
-                    if (!acc[log.materia].assuntosStats[assuntoKey]) {
-                        acc[log.materia].assuntosStats[assuntoKey] = { 
+                    const assuntoKey = assuntoRaw.trim().toLowerCase();
+                    const sessionKey = `${assuntoKey}_${log.fullDate}`; // AGRUPAMENTO POR ASSUNTO E DATA
+
+                    if (!acc[log.materia].assuntosStats[sessionKey]) {
+                        acc[log.materia].assuntosStats[sessionKey] = { 
                             displayNome: assuntoRaw.trim(), 
+                            date: log.fullDate,
                             acertos: 0, 
                             erros: 0, 
-                            totalSeconds: 0,
-                            dates: new Set() 
+                            totalSeconds: 0
                         };
                     }
-                    acc[log.materia].assuntosStats[assuntoKey].acertos += (log.acertos || 0);
-                    acc[log.materia].assuntosStats[assuntoKey].erros += (log.erros || 0);
-                    acc[log.materia].assuntosStats[assuntoKey].totalSeconds += (log.totalSeconds || 0);
-                    acc[log.materia].assuntosStats[assuntoKey].dates.add(log.fullDate);
+                    acc[log.materia].assuntosStats[sessionKey].acertos += (log.acertos || 0);
+                    acc[log.materia].assuntosStats[sessionKey].erros += (log.erros || 0);
+                    acc[log.materia].assuntosStats[sessionKey].totalSeconds += (log.totalSeconds || 0);
 
                     return acc;
                 }, {});
@@ -1172,14 +1172,14 @@
                                                                 <table className="w-full text-left border-separate border-spacing-y-2">
                                                                     <thead>
                                                                         <tr className="text-[10px] text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">
-                                                                            <th className="pb-2 pl-3 font-black">Assunto / Datas</th>
+                                                                            <th className="pb-2 pl-3 font-black">Assunto / Data</th>
                                                                             <th className="pb-2 text-center font-black">Questões (C/E)</th>
                                                                             <th className="pb-2 text-center font-black">Precisão</th>
                                                                             <th className="pb-2 pr-3 text-right font-black">Tempo</th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody>
-                                                                        {Object.values(data.assuntosStats).sort((a,b) => (b.acertos+b.erros) - (a.acertos+a.erros)).map((stats, idx) => {
+                                                                        {Object.values(data.assuntosStats).sort((a,b) => parseDateStr(b.date).getTime() - parseDateStr(a.date).getTime()).map((stats, idx) => {
                                                                             const totalAssunto = stats.acertos + stats.erros;
                                                                             const percAssunto = totalAssunto > 0 ? ((stats.acertos / totalAssunto) * 100).toFixed(0) : 0;
                                                                             return (
@@ -1188,7 +1188,7 @@
                                                                                         {stats.displayNome}
                                                                                         <div className="text-[9px] text-slate-400 dark:text-gray-500 font-normal mt-1.5 leading-tight tracking-wider flex items-center gap-1">
                                                                                             <Icon name="Calendar" size={10} className="opacity-70" />
-                                                                                            {Array.from(stats.dates).join(', ')}
+                                                                                            {stats.date}
                                                                                         </div>
                                                                                     </td>
                                                                                     <td className="p-3 text-center">
