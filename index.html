@@ -13,7 +13,7 @@
     <!-- Lucide Core -->
     <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.js"></script>
     
-    <!-- Configuração do Tailwind para suportar Modo Dark manual e Cores Customizadas -->
+    <!-- Configuração do Tailwind -->
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -59,14 +59,6 @@
         input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
         input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
         .dark input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
-
-        /* Renderização Markdown Básica */
-        .markdown-content strong { font-weight: 900; color: inherit; }
-        .dark .markdown-content strong { color: #00ff88; }
-        .markdown-content em { font-style: italic; }
-        .markdown-content p { margin-bottom: 1rem; line-height: 1.6; }
-        .markdown-content ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
-        .markdown-content li { margin-bottom: 0.5rem; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 dark:bg-darkbg dark:text-gray-200 transition-colors duration-500 min-h-screen">
@@ -132,19 +124,6 @@
             return new Date(dateStr);
         };
 
-        const renderMarkdown = (text) => {
-            if (!text) return { __html: '' };
-            let html = text
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/\n\n/g, '</p><p>')
-                .replace(/\n/g, '<br />');
-            
-            html = html.replace(/^- (.*)$/gm, '<ul><li>$1</li></ul>');
-            html = html.replace(/<\/ul><ul>/g, ''); 
-            return { __html: `<p>${html}</p>` };
-        };
-
         const App = () => {
             // TEMA STATE
             const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -176,7 +155,7 @@
             const [isSubmitting, setIsSubmitting] = useState(false);
 
             const [currentDayNumber, setCurrentDayNumber] = useState(1);
-            const [activeTab, setActiveTab] = useState('hoje'); // Tabs: hoje, dashboard, ciclo, tutor
+            const [activeTab, setActiveTab] = useState('hoje'); 
             const [dashSubTab, setDashSubTab] = useState('dias');
             const [expandedMateria, setExpandedMateria] = useState(null); 
             const [confirmDeleteId, setConfirmDeleteId] = useState(null); 
@@ -198,102 +177,6 @@
                 pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '', questaoParada: '' 
             });
 
-            // IA TUTOR STATES
-            const [aiLoading, setAiLoading] = useState(false);
-            const [aiResponse, setAiResponse] = useState('');
-            const [aiError, setAiError] = useState('');
-            const [userQuestionText, setUserQuestionText] = useState('');
-            const [userQuestionFileBase64, setUserQuestionFileBase64] = useState(null);
-            const [userQuestionFileName, setUserQuestionFileName] = useState('');
-            const fileInputRef = useRef(null);
-
-            const fetchWithBackoff = async (url, options, retries = 5, delay = 1000) => {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) {
-                        if (response.status === 429 || response.status >= 500) throw new Error(`Server Error: ${response.status}`);
-                        else {
-                            const errorText = await response.text();
-                            throw new Error(`Bad Request: ${response.status} - ${errorText}`);
-                        }
-                    }
-                    return await response.json();
-                } catch (error) {
-                    if (retries > 0) {
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        return fetchWithBackoff(url, options, retries - 1, delay * 2);
-                    }
-                    throw error;
-                }
-            };
-
-            const callGeminiAI = async (promptText, base64File = null) => {
-                setAiLoading(true);
-                setAiError('');
-                setAiResponse('');
-                try {
-                    const apiKey = "";
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-                    
-                    const parts = [{ text: promptText }];
-                    if (base64File) {
-                        const base64Data = base64File.split(',')[1];
-                        const mimeType = base64File.match(/data:(.*?);/)[1];
-                        parts.push({ inlineData: { mimeType: mimeType, data: base64Data } });
-                    }
-
-                    const payload = {
-                        contents: [{ parts }],
-                        systemInstruction: { 
-                            parts: [{ text: "Você é um tutor especialista na FGV (Fundação Getulio Vargas). Seja encorajador, direto, e dê dicas muito específicas sobre os truques, peguinhas e estilo de cobrança que a FGV costuma usar em suas provas bancárias e concursos. Analise as imagens ou textos enviados e forneça um plano ou resolução passo a passo. Use formatação limpa." }] 
-                        }
-                    };
-
-                    const data = await fetchWithBackoff(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (text) setAiResponse(text);
-                    else throw new Error("Resposta em branco da IA.");
-
-                } catch (err) {
-                    console.error("Erro Gemini:", err);
-                    setAiError("Não foi possível contactar o Tutor IA no momento. Tente novamente mais tarde.");
-                } finally {
-                    setAiLoading(false);
-                }
-            };
-
-            const handleFileUpload = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                setUserQuestionFileName(file.name);
-                const reader = new FileReader();
-                reader.onloadend = () => setUserQuestionFileBase64(reader.result);
-                reader.readAsDataURL(file);
-            };
-
-            const analyzeQuestion = () => {
-                if (!userQuestionText && !userQuestionFileBase64) {
-                    setAiError("Insira o texto da questão ou envie um ficheiro (imagem/pdf).");
-                    return;
-                }
-                let prompt = `Analise este material. Se for uma questão, identifique a matéria, explique qual a pegadinha típica da FGV, qual é a resposta correta passo a passo, e por que as outras opções estão incorretas.\n\n`;
-                if (userQuestionText) prompt += `Texto:\n${userQuestionText}`;
-                
-                callGeminiAI(prompt, userQuestionFileBase64);
-            };
-
-            const generateRescuePlan = (materia, assunto, tempoTotal, percentual, gravidade) => {
-                const tempoFormatado = formatTimeString(tempoTotal);
-                const prompt = `Estou com dificuldades em ${materia}, especificamente no assunto "${assunto}". Nas minhas últimas sessões de estudo para a FGV, dediquei um total de ${tempoFormatado} horas a este tema. Meu percentual de acertos está em ${percentual}%, o que é classificado no nosso sistema como um erro de nível "${gravidade}". Por favor, crie um "Plano de Resgate" de 3 passos práticos para eu ultrapassar esta dificuldade e chegar ao nível Ideal (>85%), focando exatamente em como a FGV cobra este assunto e nas pegadinhas que posso estar caindo.`;
-                callGeminiAI(prompt);
-                setTimeout(() => document.getElementById('ai-response-area')?.scrollIntoView({ behavior: 'smooth' }), 100);
-            };
-
             // 1. Auth Init & Listener
             useEffect(() => {
                 if (!window.fb) {
@@ -301,12 +184,10 @@
                     setLoading(false);
                     return;
                 }
-
                 const unsubscribe = window.fb.onAuthStateChanged(window.fb.auth, (u) => {
                     setUser(u);
                     setLoading(false);
                 });
-
                 return () => unsubscribe();
             }, []);
 
@@ -386,10 +267,7 @@
                 if (!user || !window.fb) return;
                 const metaRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'userMeta', 'state');
                 try {
-                    await fetchWithBackoff('timeout-simulator', { /* Fake obj for uniform pattern */ }, 0)
-                        .catch(async () => {
-                            await window.fb.setDoc(metaRef, updatesPayload, { merge: true });
-                        });
+                    await window.fb.setDoc(metaRef, updatesPayload, { merge: true });
                 } catch (e) {
                     console.error("Erro ao salvar estado:", e);
                     if (e.message?.includes('permission') || e.code === 'permission-denied') setError("firestore/permission-denied");
@@ -450,7 +328,6 @@
                     for (let i = 1; i < currentDayNumber; i++) {
                         if (dayProfiles[i] === profileToday) pastCount++;
                     }
-                    
                     const pool = studyPools[profileToday];
                     meta = pool[pastCount % pool.length];
                     baseTasks = meta.tasks;
@@ -526,63 +403,11 @@
                     daysData[day].totalSeconds += (log.totalSeconds || 0);
                 });
 
-                // Cálculo das Dificuldades (Tutor IA) com Múltiplos Níveis
-                const weakPoints = [];
-                Object.entries(logsByMateria).forEach(([materia, data]) => {
-                    const aggregatedAssuntos = {};
-                    Object.values(data.assuntosStats).forEach(session => {
-                        const key = session.displayNome.toLowerCase();
-                        if (!aggregatedAssuntos[key]) aggregatedAssuntos[key] = { nome: session.displayNome, acertos: 0, erros: 0, totalSeconds: 0 };
-                        aggregatedAssuntos[key].acertos += session.acertos;
-                        aggregatedAssuntos[key].erros += session.erros;
-                        aggregatedAssuntos[key].totalSeconds += session.totalSeconds;
-                    });
-
-                    Object.values(aggregatedAssuntos).forEach(agg => {
-                        const totalQ = agg.acertos + agg.erros;
-                        if (totalQ >= 5) { // Min. 5 questões
-                            const perc = agg.acertos / totalQ;
-                            
-                            // Categorização de Desempenho de Alto Nível
-                            let gravidade = "";
-                            let colorClass = "";
-                            let bgClass = "";
-
-                            if (perc <= 0.65) { 
-                                gravidade = "Crítico"; colorClass = "text-rose-500 dark:text-rose-400"; bgClass = "bg-rose-100 dark:bg-rose-900/30 border-rose-300 dark:border-rose-700/50"; 
-                            }
-                            else if (perc <= 0.70) { 
-                                gravidade = "Grave"; colorClass = "text-orange-500 dark:text-orange-400"; bgClass = "bg-orange-100 dark:bg-orange-900/30 border-orange-300 dark:border-orange-700/50"; 
-                            }
-                            else if (perc <= 0.75) { 
-                                gravidade = "Moderado"; colorClass = "text-amber-500 dark:text-amber-400"; bgClass = "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700/50"; 
-                            }
-                            else if (perc <= 0.80) { 
-                                gravidade = "Leve"; colorClass = "text-yellow-600 dark:text-yellow-400"; bgClass = "bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700/50"; 
-                            }
-                            else if (perc <= 0.85) { 
-                                gravidade = "Mais Leve"; colorClass = "text-blue-500 dark:text-blue-400"; bgClass = "bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700/50"; 
-                            }
-                            else { 
-                                gravidade = "Ideal"; colorClass = "text-emerald-500 dark:text-neon"; bgClass = "bg-emerald-100 dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-700/50"; 
-                            }
-
-                            if (perc <= 0.85) {
-                                weakPoints.push({
-                                    materia,
-                                    assunto: agg.nome,
-                                    precisao: Math.round(perc * 100),
-                                    tempoTotal: agg.totalSeconds,
-                                    gravidade,
-                                    colorClass,
-                                    bgClass
-                                });
-                            }
-                        }
-                    });
+                const intensityMap = {};
+                studyLogs.forEach(log => {
+                    if (!intensityMap[log.recordedDay]) intensityMap[log.recordedDay] = 0;
+                    intensityMap[log.recordedDay] += (log.totalSeconds || 0);
                 });
-                
-                weakPoints.sort((a, b) => a.precisao - b.precisao);
 
                 return {
                     totalSeconds: studyLogs.reduce((a, b) => a + (b.totalSeconds || 0), 0),
@@ -591,15 +416,17 @@
                     diasEstudados: new Set(studyLogs.map(l => l.fullDate)).size,
                     logsByMateria,
                     daysData,
-                    weakPoints 
+                    intensityMap
                 };
             }, [studyLogs]);
 
+            // Opções de filtro de disciplinas
             const subjectsOptions = useMemo(() => {
                 const subs = new Set(studyLogs.map(l => l.materia).filter(Boolean));
                 return ['Todas as Matérias', ...Array.from(subs)];
             }, [studyLogs]);
 
+            // Dashboard Interativo de Questões (Cálculo)
             const filteredQuestionsData = useMemo(() => {
                 const now = new Date();
                 now.setHours(23, 59, 59, 999);
@@ -738,7 +565,7 @@
                     }
 
                     const logsCol = window.fb.collection(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs');
-                    await withTimeout(window.fb.addDoc(logsCol, logData), 8000, "Timeout ao salvar Log no Firebase.");
+                    await window.fb.addDoc(logsCol, logData).catch(() => console.warn("Off-line sync mode"));
                     
                     const newTasks = { ...completedTasks, [activeTaskForLog.key]: true };
                     await updateCloudState({ completedTasks: newTasks, stopPoints: newStops });
@@ -874,19 +701,15 @@
 
                             <div className="flex items-center gap-6 w-full md:w-auto overflow-x-auto no-scrollbar">
                                 <nav className="flex bg-slate-100 dark:bg-[#111] p-1.5 rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner flex-1 transition-colors duration-500">
-                                    {['hoje', 'dashboard', 'ciclo', 'tutor ia'].map(tab => {
-                                        const tabId = tab.split(' ')[0];
-                                        return (
-                                            <button 
-                                                key={tab} 
-                                                onClick={() => setActiveTab(tabId)} 
-                                                className={`px-4 md:px-6 py-2.5 rounded-xl text-[10px] md:text-xs font-black uppercase transition-all duration-300 flex-1 text-center flex items-center justify-center gap-1.5 ${activeTab === tabId ? 'bg-blue-600 text-white dark:bg-neon dark:text-black shadow-md dark:shadow-[0_0_15px_rgba(0,255,136,0.3)] scale-105' : 'text-slate-500 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon hover:bg-white dark:hover:bg-darkcard'}`}
-                                            >
-                                                {tabId === 'tutor' && <Icon name="Sparkles" size={14} className={activeTab === tabId ? 'animate-pulse' : ''} />}
-                                                {tab}
-                                            </button>
-                                        )
-                                    })}
+                                    {['hoje', 'dashboard', 'ciclo'].map(tab => (
+                                        <button 
+                                            key={tab} 
+                                            onClick={() => setActiveTab(tab)} 
+                                            className={`px-4 md:px-6 py-2.5 rounded-xl text-[10px] md:text-xs font-black uppercase transition-all duration-300 flex-1 text-center flex items-center justify-center gap-1.5 ${activeTab === tab ? 'bg-blue-600 text-white dark:bg-neon dark:text-black shadow-md dark:shadow-[0_0_15px_rgba(0,255,136,0.3)] scale-105' : 'text-slate-500 dark:text-gray-500 hover:text-blue-600 dark:hover:text-neon hover:bg-white dark:hover:bg-darkcard'}`}
+                                        >
+                                            {tab}
+                                        </button>
+                                    ))}
                                 </nav>
                                 <div className="hidden md:flex items-center gap-4">
                                     <button onClick={() => setIsDarkMode(!isDarkMode)} className={`relative inline-flex items-center h-7 w-12 rounded-full transition-colors duration-300 focus:outline-none shadow-inner ${isDarkMode ? 'bg-neon' : 'bg-blue-600'}`} title="Alternar Tema">
@@ -908,6 +731,7 @@
                             {/* ABA HOJE */}
                             {activeTab === 'hoje' && (
                                 <div className="space-y-8">
+                                    
                                     {!dayProfiles[currentDayNumber] ? (
                                         <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 md:p-12 shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 text-center animate-fade-in">
                                             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/5 dark:bg-neon/10 blur-[80px] rounded-full pointer-events-none transition-colors duration-500"></div>
@@ -997,7 +821,7 @@
                                                 <div className="space-y-6">
                                                     <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-6 lg:p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
                                                         <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
-                                                            <Icon name="BarChart" size={16} /> Horas (7 Dias)
+                                                            <Icon name="BarChart" size={16} /> Horas Recentes (7d)
                                                         </h3>
                                                         
                                                         <div className="flex items-end justify-between flex-1 gap-2 md:gap-3 mt-2 px-1">
@@ -1096,6 +920,7 @@
                                                             <Icon name="Target" size={16} /> Questões
                                                         </h3>
                                                         
+                                                        {/* FILTROS COMPACTOS PARA 1 COLUNA */}
                                                         <div className="relative z-10 mb-4">
                                                             <select
                                                                 value={subjectFilter}
@@ -1172,130 +997,6 @@
                                 </div>
                             )}
                         </div>
-                        {/* ABA TUTOR IA */}
-                        {activeTab === 'tutor' && (
-                            <div className="space-y-8 animate-fade-in">
-                                <div className="bg-white dark:bg-darkcard p-8 md:p-12 rounded-[3rem] shadow-sm dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500">
-                                    <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/10 dark:bg-neon/10 blur-[80px] rounded-full pointer-events-none transition-colors duration-500"></div>
-                                    <div className="relative z-10 flex flex-col md:flex-row items-start gap-8">
-                                        
-                                        {/* Área de Diagnóstico Automático */}
-                                        <div className="w-full md:w-1/3">
-                                            <div className="flex items-center gap-3 mb-6">
-                                                <div className="p-2.5 bg-purple-100 dark:bg-neon/20 rounded-xl text-purple-600 dark:text-neon shadow-sm">
-                                                    <Icon name="Activity" size={24} />
-                                                </div>
-                                                <h2 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white italic">Seu Radar FGV</h2>
-                                            </div>
-                                            
-                                            <p className="text-xs font-bold text-slate-500 dark:text-gray-400 mb-6">A IA analisou os seus estudos e identificou estes pontos de melhoria com base na precisão exigida (Alto Desempenho FGV).</p>
-
-                                            {metrics.weakPoints.length === 0 ? (
-                                                <div className="p-6 bg-slate-50 dark:bg-[#111] rounded-2xl border border-slate-200 dark:border-darkborder text-center">
-                                                    <Icon name="CheckCircle" size={32} className="mx-auto text-emerald-500 mb-2" />
-                                                    <p className="text-xs font-bold text-slate-600 dark:text-gray-300">Tudo limpo! Não detetámos dificuldades graves recentes.</p>
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-3 max-h-[500px] overflow-y-auto git-scroll pr-2">
-                                                    {metrics.weakPoints.map((weak, i) => (
-                                                        <button 
-                                                            key={i}
-                                                            onClick={() => generateRescuePlan(weak.materia, weak.assunto, weak.tempoTotal, weak.precisao, weak.gravidade)}
-                                                            className={`w-full p-4 rounded-2xl text-left border transition-all active:scale-95 group ${weak.bgClass}`}
-                                                        >
-                                                            <div className="flex justify-between items-start mb-1">
-                                                                <span className={`text-[9px] font-black uppercase tracking-widest ${weak.colorClass}`}>{weak.gravidade}</span>
-                                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-md bg-white/50 dark:bg-black/40 ${weak.colorClass}`}>{weak.precisao}%</span>
-                                                            </div>
-                                                            <p className="text-sm font-bold text-slate-800 dark:text-gray-200 mb-2 leading-tight group-hover:text-black dark:group-hover:text-white">{weak.assunto}</p>
-                                                            <div className="flex items-center gap-1 text-[9px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest">
-                                                                <Icon name="Clock" size={10} /> Gastou {formatTimeString(weak.tempoTotal)}
-                                                                <span className="ml-auto text-blue-600 dark:text-neon flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">Pedir Plano <Icon name="ArrowRight" size={10} /></span>
-                                                            </div>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Área de Interação com a IA */}
-                                        <div className="w-full md:w-2/3 space-y-6">
-                                            <div className="flex items-center gap-3 mb-2">
-                                                <div className="p-2.5 bg-blue-100 dark:bg-neon/20 rounded-xl text-blue-600 dark:text-neon shadow-sm">
-                                                    <Icon name="BrainCircuit" size={24} />
-                                                </div>
-                                                <h2 className="text-xl font-black uppercase tracking-tighter text-slate-800 dark:text-white italic">Análise de Questões</h2>
-                                            </div>
-                                            
-                                            <div className="bg-slate-50 dark:bg-darkinput p-6 rounded-3xl border border-slate-200 dark:border-darkborder">
-                                                <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 mb-2 block">Texto da Questão que errou</label>
-                                                <textarea 
-                                                    rows="4" 
-                                                    placeholder="Cole aqui o texto da questão, do enunciado e das alternativas..." 
-                                                    className="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-gray-800 text-slate-700 dark:text-gray-300 placeholder-slate-400 dark:placeholder-gray-600 p-4 rounded-2xl text-sm outline-none focus:border-blue-500 dark:focus:border-neon git-scroll transition-colors mb-4" 
-                                                    value={userQuestionText} 
-                                                    onChange={e => setUserQuestionText(e.target.value)}
-                                                ></textarea>
-
-                                                <label className="text-[10px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest ml-1 mb-2 block">Ou Envie um Arquivo (Imagem, PDF, TXT)</label>
-                                                <div className="flex items-center gap-4">
-                                                    <input 
-                                                        type="file" 
-                                                        accept="image/*,application/pdf,text/plain" 
-                                                        ref={fileInputRef} 
-                                                        onChange={handleFileUpload} 
-                                                        className="hidden" 
-                                                    />
-                                                    <button 
-                                                        onClick={() => fileInputRef.current?.click()} 
-                                                        className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-gray-800 rounded-xl text-xs font-bold text-slate-600 dark:text-gray-300 hover:border-blue-400 dark:hover:border-neon/50 transition-colors"
-                                                    >
-                                                        <Icon name="FilePlus" size={16} className="text-blue-500 dark:text-neon" /> 
-                                                        {userQuestionFileName ? 'Ficheiro Carregado!' : 'Selecionar Ficheiro'}
-                                                    </button>
-                                                    {userQuestionFileBase64 && (
-                                                        <button onClick={() => { setUserQuestionFileBase64(null); setUserQuestionFileName(''); }} className="text-[10px] font-black text-rose-500 uppercase hover:underline">Remover</button>
-                                                    )}
-                                                </div>
-
-                                                <button 
-                                                    onClick={analyzeQuestion}
-                                                    disabled={aiLoading || (!userQuestionText && !userQuestionFileBase64)}
-                                                    className={`w-full mt-6 font-black py-4 rounded-2xl shadow-lg transition-all uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-2 ${aiLoading || (!userQuestionText && !userQuestionFileBase64) ? 'bg-slate-300 dark:bg-emerald-900 text-slate-500 dark:text-emerald-700 cursor-not-allowed' : 'bg-blue-600 dark:bg-neon text-white dark:text-black hover:bg-blue-700 dark:hover:bg-neonhover dark:hover:shadow-[0_0_20px_#00ff88] active:scale-95'}`}
-                                                >
-                                                    {aiLoading ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Sparkles" size={16} />}
-                                                    {aiLoading ? 'A Analisar Padrões da FGV...' : 'Explicar Erro'}
-                                                </button>
-                                            </div>
-                                            
-                                            {/* Resposta da IA */}
-                                            {(aiResponse || aiError) && (
-                                                <div id="ai-response-area" className={`p-6 md:p-8 rounded-3xl border animate-fade-in ${aiError ? 'bg-rose-50 dark:bg-rose-900/10 border-rose-200 dark:border-rose-900/30' : 'bg-blue-50 dark:bg-[#111] border-blue-200 dark:border-neon/30 shadow-inner'}`}>
-                                                    <div className="flex items-center gap-2 mb-4">
-                                                        <Icon name={aiError ? "AlertCircle" : "Sparkles"} size={18} className={aiError ? "text-rose-500" : "text-blue-600 dark:text-neon"} />
-                                                        <h3 className={`text-xs font-black uppercase tracking-widest ${aiError ? "text-rose-600 dark:text-rose-400" : "text-blue-700 dark:text-neon"}`}>
-                                                            {aiError ? "Aviso" : "Feedback do Tutor FGV"}
-                                                        </h3>
-                                                    </div>
-                                                    
-                                                    {aiError ? (
-                                                        <p className="text-sm font-bold text-rose-600 dark:text-rose-400">{aiError}</p>
-                                                    ) : (
-                                                        <div 
-                                                            className="markdown-content text-sm text-slate-700 dark:text-gray-300 font-medium"
-                                                            dangerouslySetInnerHTML={renderMarkdown(aiResponse)}
-                                                        />
-                                                    )}
-                                                    
-                                                    <p className="text-[8px] font-black text-slate-400 dark:text-gray-600 uppercase tracking-widest mt-6 pt-4 border-t border-slate-200 dark:border-darkborder text-center">Processado localmente via Gemini API (Gratuito)</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
                         {activeTab === 'dashboard' && (
                             <div className="space-y-8 animate-fade-in">
                                 <div className="flex bg-white dark:bg-darkcard p-1.5 rounded-2xl shadow-sm dark:shadow-lg border border-slate-200 dark:border-darkborder w-fit mx-auto md:mx-0 overflow-x-auto max-w-full transition-colors duration-500">
@@ -1326,7 +1027,8 @@
                                                     <div className="inline-grid grid-rows-7 grid-flow-col gap-2 p-5 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500">
                                                         {Array.from({length: Math.max(168, Math.ceil(currentDayNumber / 7) * 7 + 14)}).map((_, i) => {
                                                             const dayNum = i + 1;
-                                                            const seconds = metrics.intensityMap[dayNum] || 0;
+                                                            const dayInfo = metrics.daysData[dayNum];
+                                                            const seconds = dayInfo ? dayInfo.totalSeconds : 0;
                                                             
                                                             let colorClass = isDarkMode ? "bg-[#111] border-[#222]" : "bg-slate-200 border-slate-300"; 
                                                             if (seconds > 0 && seconds < 3600) colorClass = isDarkMode ? "bg-[#00ff88]/20 border-[#00ff88]/30" : "bg-blue-300 border-blue-400"; 
@@ -1455,8 +1157,7 @@
                                                                             <th className="pb-2 pl-3 font-black">Assunto / Data</th>
                                                                             <th className="pb-2 text-center font-black">Questões (C/E)</th>
                                                                             <th className="pb-2 text-center font-black">Precisão</th>
-                                                                            <th className="pb-2 text-center font-black">Tempo</th>
-                                                                            <th className="pb-2 pr-3 text-center font-black">Ação</th>
+                                                                            <th className="pb-2 pr-3 text-right font-black">Tempo</th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody>
@@ -1478,28 +1179,9 @@
                                                                                         <span className="text-xs font-black text-rose-500 transition-colors duration-500">{stats.erros}</span>
                                                                                     </td>
                                                                                     <td className="p-3 text-center">
-                                                                                        <span className={`text-xs font-black transition-colors duration-500 ${percAssunto >= 85 ? 'text-emerald-500 dark:text-neon drop-shadow-sm' : percAssunto >= 70 ? 'text-blue-500' : 'text-rose-500'}`}>{percAssunto}%</span>
+                                                                                        <span className={`text-xs font-black transition-colors duration-500 ${percAssunto >= 70 ? 'text-blue-600 dark:text-neon drop-shadow-sm' : 'text-amber-500'}`}>{percAssunto}%</span>
                                                                                     </td>
-                                                                                    <td className="p-3 text-center font-mono text-xs text-slate-500 dark:text-gray-400 transition-colors duration-500">{formatTimeString(stats.totalSeconds)}</td>
-                                                                                    <td className="p-3 text-center rounded-r-xl">
-                                                                                        <button
-                                                                                            onClick={() => {
-                                                                                                let gravidade = "Ideal";
-                                                                                                if (percAssunto <= 65) gravidade = "Crítico";
-                                                                                                else if (percAssunto <= 70) gravidade = "Grave";
-                                                                                                else if (percAssunto <= 75) gravidade = "Moderado";
-                                                                                                else if (percAssunto <= 80) gravidade = "Leve";
-                                                                                                else if (percAssunto <= 85) gravidade = "Mais Leve";
-                                                                                                
-                                                                                                setActiveTab('tutor');
-                                                                                                generateRescuePlan(materia, stats.displayNome, stats.totalSeconds, percAssunto, gravidade);
-                                                                                            }}
-                                                                                            className="p-2 bg-purple-100 dark:bg-neon/20 text-purple-600 dark:text-neon rounded-lg hover:bg-purple-200 dark:hover:bg-neon/40 transition-colors inline-block"
-                                                                                            title="Analisar Dificuldade na IA"
-                                                                                        >
-                                                                                            <Icon name="Sparkles" size={14} />
-                                                                                        </button>
-                                                                                    </td>
+                                                                                    <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-gray-400 rounded-r-xl transition-colors duration-500">{formatTimeString(stats.totalSeconds)}</td>
                                                                                 </tr>
                                                                             );
                                                                         })}
@@ -1677,21 +1359,21 @@
                     )}
 
                     {/* Footer Stats Cloud Dinâmico */}
-                    {!showLogModal && (
-                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl text-slate-900 dark:text-white px-8 py-4 rounded-[2rem] shadow-2xl dark:shadow-[0_0_30px_rgba(0,0,0,0.8)] flex items-center gap-10 border border-slate-200 dark:border-neon/30 z-50 animate-fade-in transition-colors duration-500">
+                    {!showLogModal && user && (
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl text-slate-900 dark:text-white px-8 py-4 rounded-[2rem] shadow-2xl border border-slate-200 dark:border-neon/30 z-50 animate-fade-in flex items-center gap-10 transition-colors duration-500">
                             <div className="flex items-center gap-3">
-                                <div className="p-1.5 bg-blue-100 dark:bg-neon/20 rounded-lg text-blue-600 dark:text-neon border border-blue-200 dark:border-neon/50 shadow-sm dark:shadow-[0_0_10px_rgba(0,255,136,0.2)] transition-colors duration-500"><Icon name="Trophy" size={16}/></div>
+                                <div className="p-1.5 bg-blue-100 dark:bg-neon/20 rounded-lg text-blue-600 dark:text-neon shadow-sm transition-colors duration-500"><Icon name="Trophy" size={16}/></div>
                                 <div className="flex flex-col">
-                                    <span className="text-sm font-black leading-none italic text-slate-800 dark:text-white drop-shadow-sm dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.5)] transition-colors duration-500">{((metrics.totalAcertos / (metrics.totalAcertos + metrics.totalErros || 1)) * 100).toFixed(1)}%</span>
-                                    <span className="text-[8px] font-black uppercase text-blue-600 dark:text-neon tracking-[0.2em] mt-0.5 transition-colors duration-500">Precisão Cloud</span>
+                                    <span className="text-sm font-black leading-none italic">{metrics.totalAcertos + metrics.totalErros > 0 ? ((metrics.totalAcertos / (metrics.totalAcertos + metrics.totalErros)) * 100).toFixed(1) : 0}%</span>
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-blue-600 dark:text-neon transition-colors duration-500">Precisão Cloud</span>
                                 </div>
                             </div>
                             <div className="w-px h-8 bg-slate-200 dark:bg-gray-700 transition-colors duration-500"></div>
                             <div className="flex items-center gap-3">
-                                <div className="p-1.5 bg-blue-100 dark:bg-neon/20 rounded-lg text-blue-600 dark:text-neon border border-blue-200 dark:border-neon/50 shadow-sm dark:shadow-[0_0_10px_rgba(0,255,136,0.2)] transition-colors duration-500"><Icon name="Target" size={16}/></div>
+                                <div className="p-1.5 bg-blue-100 dark:bg-neon/20 rounded-lg text-blue-600 dark:text-neon shadow-sm transition-colors duration-500"><Icon name="Target" size={16}/></div>
                                 <div className="flex flex-col">
-                                    <span className="text-sm font-black leading-none italic tabular-nums text-slate-800 dark:text-white drop-shadow-sm dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.5)] transition-colors duration-500">{formatTimeString(metrics.totalSeconds)}</span>
-                                    <span className="text-[8px] font-black uppercase text-blue-600 dark:text-neon tracking-[0.2em] mt-0.5 transition-colors duration-500">Horas Master</span>
+                                    <span className="text-sm font-black leading-none italic tabular-nums">{formatTimeString(metrics.totalSeconds)}</span>
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-blue-600 dark:text-neon transition-colors duration-500">Horas Master</span>
                                 </div>
                             </div>
                         </div>
