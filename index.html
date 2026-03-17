@@ -382,14 +382,6 @@
                 setStudyLogs([]); setCompletedTasks({}); setStopPoints({}); setDayProfiles({}); setCurrentDayNumber(1);
             };
 
-            const withTimeout = (promise, ms, errorMessage) => {
-                let timeoutId;
-                const timeoutPromise = new Promise((_, reject) => {
-                    timeoutId = setTimeout(() => reject(new Error(errorMessage)), ms);
-                });
-                return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
-            };
-
             const updateCloudState = async (updatesPayload) => {
                 if (!user || !window.fb) return;
                 const metaRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'userMeta', 'state');
@@ -532,13 +524,6 @@
                     const day = log.recordedDay;
                     if (!daysData[day]) daysData[day] = { totalSeconds: 0, materias: {} };
                     daysData[day].totalSeconds += (log.totalSeconds || 0);
-                    
-                    if (!daysData[day].materias[log.materia]) {
-                        daysData[day].materias[log.materia] = { acertos: 0, erros: 0, totalSeconds: 0 };
-                    }
-                    daysData[day].materias[log.materia].acertos += (log.acertos || 0);
-                    daysData[day].materias[log.materia].erros += (log.erros || 0);
-                    daysData[day].materias[log.materia].totalSeconds += (log.totalSeconds || 0);
                 });
 
                 // Cálculo das Dificuldades (Tutor IA) com Múltiplos Níveis
@@ -722,7 +707,7 @@
                     const finalH = pad(logForm.h);
                     const finalM = pad(logForm.m);
                     const finalS = pad(logForm.s);
-                    const totalSec = (parseInt(finalH, 10) * 3600) + (parseInt(finalM, 10) * 60) + parseInt(finalS, 10);
+                    const totalSec = (parseInt(finalH || 0, 10) * 3600) + (parseInt(finalM || 0, 10) * 60) + parseInt(finalS || 0, 10);
                     
                     const numAcertos = parseInt(logForm.acertos, 10);
                     const numTotal = parseInt(logForm.total, 10);
@@ -960,7 +945,9 @@
                                         </div>
                                     ) : (
                                         <>
+                                            {/* LINHA 1: Tarefas (2 Colunas) + Gráfico de Horas (1 Coluna) */}
                                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                                {/* TAREFAS */}
                                                 <div className="lg:col-span-2 space-y-6">
                                                     <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
                                                         <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[60px] rounded-full pointer-events-none transition-colors duration-500"></div>
@@ -1006,60 +993,175 @@
                                                     </div>
                                                 </div>
                                                 
+                                                {/* GRÁFICO DE HORAS RECENTES (1 Coluna, Alinhado à Direita sob o botão Sair) */}
+                                                <div className="space-y-6">
+                                                    <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-6 lg:p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
+                                                        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
+                                                            <Icon name="BarChart" size={16} /> Horas (7 Dias)
+                                                        </h3>
+                                                        
+                                                        <div className="flex items-end justify-between flex-1 gap-2 md:gap-3 mt-2 px-1">
+                                                            {last7DaysHours.map((d, i) => {
+                                                                const height = maxHours > 0 ? (d.hours / maxHours) * 100 : 0;
+                                                                return (
+                                                                    <div key={i} className="flex flex-col items-center gap-2 flex-1 group h-full justify-end">
+                                                                        <div className="w-full max-w-[28px] relative flex items-end justify-center h-32 bg-slate-50 dark:bg-darkbg rounded-t-lg transition-colors duration-500">
+                                                                            <div 
+                                                                                className="w-full bg-blue-500 dark:bg-neon rounded-t-md transition-all duration-700 ease-out group-hover:opacity-80"
+                                                                                style={{ height: `${height}%`, minHeight: d.hours > 0 ? '4px' : '0' }}
+                                                                            ></div>
+                                                                            <span className="absolute -top-6 text-[10px] font-bold text-slate-700 dark:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                                {d.hours.toFixed(1)}h
+                                                                            </span>
+                                                                        </div>
+                                                                        <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase">{d.label}</span>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        
+                                                        <div className="mt-8 pt-5 border-t border-slate-100 dark:border-darkborder transition-colors duration-500 flex items-center justify-between">
+                                                            <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Total Global</p>
+                                                            <p className="text-2xl font-black text-slate-800 dark:text-white transition-colors duration-500">{formatTimeString(metrics.totalSeconds)}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* LINHA 2: Matriz de Dias Contínuos (2 Colunas) + Dashboard de Questões (1 Coluna) */}
+                                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                                {/* MATRIZ DE DIAS CONTÍNUOS (Expandida) */}
+                                                <div className="lg:col-span-2 space-y-6">
+                                                    <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
+                                                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/5 dark:bg-neon/5 blur-[80px] rounded-full pointer-events-none transition-colors duration-500"></div>
+                                                        <div className="relative z-10 flex-1 flex flex-col">
+                                                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-6 flex items-center gap-2 transition-colors duration-500">
+                                                                <Icon name="Calendar" size={16} /> Matriz de Dias Contínuos
+                                                            </h3>
+                                                            
+                                                            <div className="w-full overflow-x-auto pb-2 git-scroll flex-1 flex items-center">
+                                                                <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 sm:gap-2 bg-slate-50 dark:bg-darkbg p-5 rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500 mx-auto w-full justify-start md:justify-center">
+                                                                    {Array.from({length: Math.max(168, Math.ceil(currentDayNumber / 7) * 7)}).map((_, i) => {
+                                                                        const dayNum = i + 1;
+                                                                        const dayInfo = metrics.daysData[dayNum];
+                                                                        const seconds = dayInfo ? dayInfo.totalSeconds : 0;
+                                                                        
+                                                                        let colorClass = isDarkMode ? "bg-[#111] border-[#222]" : "bg-slate-200 border-slate-300"; 
+                                                                        if (seconds > 0 && seconds < 3600) colorClass = isDarkMode ? "bg-[#00ff88]/20 border-[#00ff88]/30" : "bg-blue-300 border-blue-400"; 
+                                                                        else if (seconds >= 3600 && seconds < 10800) colorClass = isDarkMode ? "bg-[#00ff88]/50 border-[#00ff88]/60" : "bg-blue-500 border-blue-600"; 
+                                                                        else if (seconds >= 10800 && seconds < 21600) colorClass = isDarkMode ? "bg-[#00ff88]/80 border-[#00ff88]/90" : "bg-blue-700 border-blue-800"; 
+                                                                        else if (seconds >= 21600) colorClass = isDarkMode ? "bg-neon shadow-[0_0_10px_#00ff88] border-[#00ff88] z-10 relative" : "bg-blue-900 shadow-md border-blue-950 z-10 relative"; 
+                                                                        
+                                                                        const isCurrent = dayNum === currentDayNumber;
+                                                                        if (isCurrent && seconds === 0) colorClass = isDarkMode ? "bg-[#111] ring-1 ring-neon ring-offset-1 ring-offset-darkbg z-10 relative" : "bg-white ring-1 ring-blue-600 ring-offset-1 ring-offset-slate-50 z-10 relative";
+
+                                                                        // Tooltip simplificada com apenas as horas
+                                                                        let tooltipText = `Dia ${dayNum}`;
+                                                                        if (seconds > 0) tooltipText += ` - Estudou: ${formatTimeString(seconds)}`;
+                                                                        else tooltipText += ` - Sem estudo`;
+
+                                                                        return (
+                                                                            <div 
+                                                                                key={i} 
+                                                                                title={tooltipText}
+                                                                                className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-[4px] cursor-crosshair hover:scale-150 hover:z-20 transition-all ${colorClass}`}
+                                                                            ></div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <div className="flex justify-between items-end mt-6">
+                                                                <div>
+                                                                    <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Sessões Ativas</p>
+                                                                    <p className="text-3xl font-black text-blue-600 dark:text-neon leading-none mt-1 transition-colors duration-500">{metrics.diasEstudados}</p>
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-darkbg p-2 rounded-xl border border-slate-200 dark:border-darkborder transition-colors duration-500">
+                                                                    <span className="text-[9px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mr-2">Nível</span>
+                                                                    <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-[#111] border-[#222]' : 'bg-slate-200 border-slate-300'}`}></div>
+                                                                    <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-[#00ff88]/50 border-[#00ff88]/60' : 'bg-blue-500 border-blue-600'}`}></div>
+                                                                    <div className={`w-3 h-3 rounded-[3px] ${isDarkMode ? 'bg-neon shadow-[0_0_5px_#00ff88] border-[#00ff88]' : 'bg-blue-900 border-blue-950'}`}></div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* DASHBOARD DE QUESTÕES NA LATERAL (1 Coluna) */}
                                                 <div className="space-y-6">
                                                     <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-6 lg:p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 flex flex-col h-full">
                                                         <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 dark:bg-neon/10 blur-[50px] rounded-full pointer-events-none transition-colors duration-500"></div>
                                                         
                                                         <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 dark:text-neon mb-4 flex items-center gap-2 relative z-10">
-                                                            <Icon name="Calendar" size={16} /> Matriz de Dias
+                                                            <Icon name="Target" size={16} /> Questões
                                                         </h3>
                                                         
-                                                        <div className="w-full overflow-x-auto pb-2 git-scroll flex-1 flex items-center">
-                                                            <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 sm:gap-2 bg-slate-50 dark:bg-darkbg p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500 mx-auto">
-                                                                {Array.from({length: Math.max(84, Math.ceil(currentDayNumber / 7) * 7)}).map((_, i) => {
-                                                                    const dayNum = i + 1;
-                                                                    const dayInfo = metrics.daysData[dayNum];
-                                                                    const seconds = dayInfo ? dayInfo.totalSeconds : 0;
-                                                                    
-                                                                    let colorClass = isDarkMode ? "bg-[#111] border-[#222]" : "bg-slate-200 border-slate-300"; 
-                                                                    if (seconds > 0 && seconds < 3600) colorClass = isDarkMode ? "bg-[#00ff88]/20 border-[#00ff88]/30" : "bg-blue-300 border-blue-400"; 
-                                                                    else if (seconds >= 3600 && seconds < 10800) colorClass = isDarkMode ? "bg-[#00ff88]/50 border-[#00ff88]/60" : "bg-blue-500 border-blue-600"; 
-                                                                    else if (seconds >= 10800 && seconds < 21600) colorClass = isDarkMode ? "bg-[#00ff88]/80 border-[#00ff88]/90" : "bg-blue-700 border-blue-800"; 
-                                                                    else if (seconds >= 21600) colorClass = isDarkMode ? "bg-neon shadow-[0_0_10px_#00ff88] border-[#00ff88] z-10 relative" : "bg-blue-900 shadow-md border-blue-950 z-10 relative"; 
-                                                                    
-                                                                    const isCurrent = dayNum === currentDayNumber;
-                                                                    if (isCurrent && seconds === 0) colorClass = isDarkMode ? "bg-[#111] ring-1 ring-neon ring-offset-1 ring-offset-darkbg z-10 relative" : "bg-white ring-1 ring-blue-600 ring-offset-1 ring-offset-slate-50 z-10 relative";
+                                                        <div className="relative z-10 mb-4">
+                                                            <select
+                                                                value={subjectFilter}
+                                                                onChange={(e) => setSubjectFilter(e.target.value)}
+                                                                className="w-full bg-slate-50 border border-slate-200 dark:bg-darkinput dark:border-darkborder text-slate-600 dark:text-gray-300 px-3 py-2 rounded-lg text-[10px] font-black uppercase outline-none focus:border-blue-500 dark:focus:border-neon transition-colors cursor-pointer mb-3"
+                                                            >
+                                                                {subjectsOptions.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                                                            </select>
 
-                                                                    // Construindo a Tooltip Rica
-                                                                    let tooltipText = `Dia ${dayNum}`;
-                                                                    if (seconds > 0) {
-                                                                        tooltipText += ` - Total: ${formatTimeString(seconds)}\n`;
-                                                                        Object.entries(dayInfo.materias).forEach(([mat, stats]) => {
-                                                                            const totalQ = stats.acertos + stats.erros;
-                                                                            const perc = totalQ > 0 ? Math.round((stats.acertos / totalQ) * 100) : 0;
-                                                                            tooltipText += `\n• ${mat}: ${formatTimeString(stats.totalSeconds)} (${perc}% acerto)`;
-                                                                        });
-                                                                    }
-
-                                                                    return (
-                                                                        <div 
-                                                                            key={i} 
-                                                                            title={tooltipText}
-                                                                            className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-[3px] cursor-crosshair hover:scale-150 hover:z-20 transition-all ${colorClass}`}
-                                                                        ></div>
-                                                                    );
-                                                                })}
+                                                            <div className="grid grid-cols-4 gap-1">
+                                                                {['7', '15', '30', 'custom'].map(f => (
+                                                                    <button
+                                                                        key={f}
+                                                                        onClick={() => setQuestionsFilter(f)}
+                                                                        className={`py-1.5 rounded-lg text-[9px] font-black uppercase transition-all border ${questionsFilter === f ? 'bg-blue-600 border-blue-600 text-white dark:bg-neon dark:border-neon dark:text-black shadow-md' : 'bg-slate-50 border-slate-200 dark:bg-darkinput dark:border-darkborder text-slate-500 dark:text-gray-400 hover:border-blue-300 dark:hover:border-neon/50 hover:text-blue-600 dark:hover:text-neon'}`}
+                                                                    >
+                                                                        {f === 'custom' ? 'Cstm.' : `${f}d`}
+                                                                    </button>
+                                                                ))}
                                                             </div>
                                                         </div>
-                                                        
-                                                        <div className="flex justify-between items-end mt-6 flex-wrap gap-4">
-                                                            <div>
-                                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Dia Atual</p>
-                                                                <p className="text-3xl font-black text-blue-600 dark:text-neon leading-none mt-1 transition-colors duration-500">{currentDayNumber}</p>
+
+                                                        {questionsFilter === 'custom' && (
+                                                            <div className="flex flex-col gap-2 mb-4 relative z-10 animate-fade-in w-full">
+                                                                <input 
+                                                                    type="date" 
+                                                                    value={customDateRange.start} 
+                                                                    onChange={e => setCustomDateRange({...customDateRange, start: e.target.value})} 
+                                                                    className="w-full bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
+                                                                    title="Data de Início"
+                                                                />
+                                                                <input 
+                                                                    type="date" 
+                                                                    value={customDateRange.end} 
+                                                                    onChange={e => setCustomDateRange({...customDateRange, end: e.target.value})} 
+                                                                    className="w-full bg-slate-50 dark:bg-darkinput border border-slate-200 dark:border-darkborder text-slate-600 dark:text-gray-300 p-2 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500 dark:focus:border-neon transition-colors" 
+                                                                    title="Data Final"
+                                                                />
                                                             </div>
-                                                            <div className="text-right">
-                                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest transition-colors duration-500">Ativas</p>
-                                                                <p className="text-3xl font-black text-slate-800 dark:text-white leading-none mt-1 transition-colors duration-500">{metrics.diasEstudados}</p>
+                                                        )}
+
+                                                        <div className="flex-1 flex flex-col justify-center relative z-10 mt-2">
+                                                            <div className="text-center mb-6">
+                                                                <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-1 transition-colors">Total Resolvidas</p>
+                                                                <h3 className="text-6xl font-black text-slate-800 dark:text-white tracking-tighter italic drop-shadow-sm transition-colors">{filteredQuestionsData.total}</h3>
+                                                            </div>
+
+                                                            <div className="grid grid-cols-2 gap-3 mb-6">
+                                                                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/20 p-3 rounded-2xl text-center transition-colors">
+                                                                    <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{filteredQuestionsData.totalAcertos}</p>
+                                                                    <p className="text-[9px] font-black text-emerald-600/70 dark:text-emerald-500/70 uppercase tracking-widest mt-1">Acertos</p>
+                                                                </div>
+                                                                <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-500/20 p-3 rounded-2xl text-center transition-colors">
+                                                                    <p className="text-2xl font-black text-rose-600 dark:text-rose-400">{filteredQuestionsData.totalErros}</p>
+                                                                    <p className="text-[9px] font-black text-rose-600/70 dark:text-rose-500/70 uppercase tracking-widest mt-1">Erros</p>
+                                                                </div>
+                                                            </div>
+
+                                                            <div>
+                                                                <div className="flex justify-between items-end mb-2">
+                                                                    <span className="text-[10px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-widest">Precisão Geral</span>
+                                                                    <span className="text-sm font-black text-emerald-600 dark:text-neon">{filteredQuestionsData.perc}%</span>
+                                                                </div>
+                                                                <div className="w-full bg-rose-100 dark:bg-rose-950 h-3 rounded-full overflow-hidden border border-rose-200 dark:border-rose-900/50 flex transition-colors">
+                                                                    <div className="bg-emerald-500 dark:bg-neon h-full shadow-sm dark:shadow-[0_0_10px_#10b981] transition-all duration-700 ease-out" style={{width: `${filteredQuestionsData.perc}%`}}></div>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1224,8 +1326,7 @@
                                                     <div className="inline-grid grid-rows-7 grid-flow-col gap-2 p-5 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500">
                                                         {Array.from({length: Math.max(168, Math.ceil(currentDayNumber / 7) * 7 + 14)}).map((_, i) => {
                                                             const dayNum = i + 1;
-                                                            const dayInfo = metrics.daysData[dayNum];
-                                                            const seconds = dayInfo ? dayInfo.totalSeconds : 0;
+                                                            const seconds = metrics.intensityMap[dayNum] || 0;
                                                             
                                                             let colorClass = isDarkMode ? "bg-[#111] border-[#222]" : "bg-slate-200 border-slate-300"; 
                                                             if (seconds > 0 && seconds < 3600) colorClass = isDarkMode ? "bg-[#00ff88]/20 border-[#00ff88]/30" : "bg-blue-300 border-blue-400"; 
@@ -1234,17 +1335,11 @@
                                                             else if (seconds >= 21600) colorClass = isDarkMode ? "bg-neon shadow-[0_0_10px_#00ff88] border-[#00ff88] z-10 relative" : "bg-blue-900 shadow-md border-blue-950 z-10 relative"; 
                                                             
                                                             const isCurrent = dayNum === currentDayNumber;
-                                                            if (isCurrent && seconds === 0) colorClass = isDarkMode ? "bg-[#111] ring-1 ring-neon ring-offset-1 ring-offset-darkbg z-10 relative" : "bg-white ring-1 ring-blue-600 ring-offset-1 ring-offset-slate-50 z-10 relative";
+                                                            if (isCurrent && seconds === 0) colorClass = isDarkMode ? "bg-[#111] ring-2 ring-neon ring-offset-1 ring-offset-darkbg z-10 relative" : "bg-white ring-2 ring-blue-600 ring-offset-1 ring-offset-slate-50 z-10 relative";
 
                                                             let tooltipText = `Dia ${dayNum}`;
-                                                            if (seconds > 0) {
-                                                                tooltipText += ` - Total: ${formatTimeString(seconds)}\n`;
-                                                                Object.entries(dayInfo.materias).forEach(([mat, stats]) => {
-                                                                    const totalQ = stats.acertos + stats.erros;
-                                                                    const perc = totalQ > 0 ? Math.round((stats.acertos / totalQ) * 100) : 0;
-                                                                    tooltipText += `\n• ${mat}: ${formatTimeString(stats.totalSeconds)} (${perc}% acerto)`;
-                                                                });
-                                                            }
+                                                            if (seconds > 0) tooltipText += ` - Estudou: ${formatTimeString(seconds)}`;
+                                                            else tooltipText += ` - Sem estudo`;
 
                                                             return (
                                                                 <div 
