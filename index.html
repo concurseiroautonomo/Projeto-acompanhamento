@@ -278,9 +278,18 @@
             const executeDelete = async (logId) => {
                 if (!user || !window.fb) return;
                 try {
+                    const logToDelete = studyLogs.find(l => l.id === logId);
+                    const taskKey = logToDelete?.taskKey;
+
                     const logRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs', logId);
                     await window.fb.deleteDoc(logRef);
                     setConfirmDeleteId(null);
+
+                    if (taskKey && completedTasks[taskKey]) {
+                        const newTasks = { ...completedTasks };
+                        delete newTasks[taskKey];
+                        updateCloudState({ completedTasks: newTasks });
+                    }
                 } catch (e) {
                     console.error("Erro ao excluir log:", e);
                 }
@@ -517,6 +526,13 @@
                 } else {
                     const newTasks = { ...completedTasks };
                     delete newTasks[taskKey];
+                    
+                    const logToDelete = studyLogs.find(l => l.taskKey === taskKey && l.recordedDay === currentDayNumber);
+                    if (logToDelete && window.fb) {
+                        const logRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs', logToDelete.id);
+                        window.fb.deleteDoc(logRef).catch(e => console.error(e));
+                    }
+                    
                     updateCloudState({ completedTasks: newTasks });
                 }
             };
@@ -779,7 +795,15 @@
                                                         <div className="flex items-center justify-between mb-8 relative z-10">
                                                             <div>
                                                                 <h2 className="text-4xl font-black text-slate-800 dark:text-white tracking-tighter italic drop-shadow-sm transition-colors duration-500">Dia {currentDayNumber}</h2>
-                                                                <p className="text-sm font-bold text-blue-600 dark:text-neon uppercase tracking-widest mt-1 transition-colors duration-500">Perfil: {currentDayMeta.type} • {currentDayMeta.hours}h</p>
+                                                                <div className="flex items-center gap-2 mt-1">
+                                                                    <p className="text-sm font-bold text-blue-600 dark:text-neon uppercase tracking-widest transition-colors duration-500">Perfil: {currentDayMeta.type} • {currentDayMeta.hours}h</p>
+                                                                    <button onClick={() => {
+                                                                        const newProfiles = {...dayProfiles};
+                                                                        delete newProfiles[currentDayNumber];
+                                                                        setDayProfiles(newProfiles);
+                                                                        updateCloudState({ dayProfiles: newProfiles });
+                                                                    }} className="text-[9px] font-black uppercase tracking-widest bg-slate-200 dark:bg-darkborder text-slate-500 hover:text-rose-500 px-2 py-0.5 rounded-md transition-colors">Alterar</button>
+                                                                </div>
                                                             </div>
                                                             <div className="flex gap-3">
                                                                 <button onClick={() => changeDay(-1)} className="p-3 bg-slate-100 dark:bg-[#111] text-slate-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-neon hover:bg-slate-200 dark:hover:bg-darkbg rounded-2xl active:scale-95 transition-all border border-slate-200 dark:border-darkborder"><Icon name="ChevronLeft"/></button>
