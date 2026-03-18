@@ -67,7 +67,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, collection, onSnapshot, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const userFirebaseConfig = {
             apiKey: "AIzaSy" + "A46Uem7mCWbN7wpxL3I_naKM8ZxcPzwZE",
@@ -87,7 +87,7 @@
             window.fb = {
                 auth, db, appId, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
                 GoogleAuthProvider, signInWithPopup,
-                doc, setDoc, getDoc, collection, onSnapshot, query, where, addDoc, deleteDoc
+                doc, setDoc, collection, onSnapshot, addDoc, deleteDoc
             };
         } catch (e) {
             console.error("Erro ao inicializar Firebase:", e);
@@ -95,7 +95,7 @@
     </script>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
+        const { useState, useEffect, useMemo } = React;
 
         const Icon = ({ name, size = 20, className = "" }) => {
             const [svgContent, setSvgContent] = useState("");
@@ -118,10 +118,20 @@
         const parseDateStr = (dateStr) => {
             if (!dateStr) return new Date(0);
             const parts = dateStr.split('/');
-            if (parts.length === 3) {
-                return new Date(parts[2], parts[1] - 1, parts[0]);
-            }
+            if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
             return new Date(dateStr);
+        };
+
+        const secondsToHMS = (totalSeconds) => {
+            const h = Math.floor(totalSeconds / 3600);
+            const m = Math.floor((totalSeconds % 3600) / 60);
+            const s = totalSeconds % 60;
+            return { h: h.toString().padStart(2, '0'), m: m.toString().padStart(2, '0'), s: s.toString().padStart(2, '0') };
+        };
+
+        const formatTimeString = (s) => {
+            const { h, m, s: sec } = secondsToHMS(s);
+            return `${h}:${m}:${sec}`;
         };
 
         const App = () => {
@@ -164,9 +174,6 @@
             const [questionsFilter, setQuestionsFilter] = useState('7');
             const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
             const [subjectFilter, setSubjectFilter] = useState('Todas as Matérias'); 
-            
-            const [timerSeconds, setTimerSeconds] = useState(0);
-            const [isTimerRunning, setIsTimerRunning] = useState(false);
 
             const [showLogModal, setShowLogModal] = useState(false);
             const [activeTaskForLog, setActiveTaskForLog] = useState(null);
@@ -230,7 +237,6 @@
                     if (isLoginMode) await window.fb.signInWithEmailAndPassword(window.fb.auth, email, password);
                     else await window.fb.createUserWithEmailAndPassword(window.fb.auth, email, password);
                 } catch (err) {
-                    console.error("Erro de Autenticação:", err);
                     switch (err.code) {
                         case 'auth/email-already-in-use': setAuthError('Este e-mail já está registado.'); break;
                         case 'auth/invalid-credential':
@@ -251,9 +257,8 @@
                     const provider = new window.fb.GoogleAuthProvider();
                     await window.fb.signInWithPopup(window.fb.auth, provider);
                 } catch (err) {
-                    console.error("Erro de Autenticação Google:", err);
                     if (err.code === 'auth/popup-closed-by-user') setAuthError('O login com Google foi cancelado.');
-                    else if (err.code === 'auth/unauthorized-domain') setAuthError('Domínio não autorizado. Adicione este site no Firebase (Authorized Domains).');
+                    else if (err.code === 'auth/unauthorized-domain') setAuthError('Domínio não autorizado. Adicione este site no Firebase.');
                     else setAuthError('Ocorreu um erro ao entrar com o Google.');
                 } finally { setAuthLoading(false); }
             };
@@ -270,11 +275,10 @@
                     await window.fb.setDoc(metaRef, updatesPayload, { merge: true });
                 } catch (e) {
                     console.error("Erro ao salvar estado:", e);
-                    if (e.message?.includes('permission') || e.code === 'permission-denied') setError("firestore/permission-denied");
-                    else alert("Aviso: Falha na gravação do estado. " + e.message);
                 }
             };
 
+            // Exclusão Centralizada de Logs (Atualiza BD e UI)
             const executeDelete = async (logId) => {
                 if (!user || !window.fb) return;
                 try {
@@ -293,18 +297,6 @@
                 } catch (e) {
                     console.error("Erro ao excluir log:", e);
                 }
-            };
-
-            const secondsToHMS = (totalSeconds) => {
-                const h = Math.floor(totalSeconds / 3600);
-                const m = Math.floor((totalSeconds % 3600) / 60);
-                const s = totalSeconds % 60;
-                return { h: h.toString().padStart(2, '0'), m: m.toString().padStart(2, '0'), s: s.toString().padStart(2, '0') };
-            };
-
-            const formatTimeString = (s) => {
-                const { h, m, s: sec } = secondsToHMS(s);
-                return `${h}:${m}:${sec}`;
             };
 
             // TRILHAS DE PROGRESSÃO
@@ -378,7 +370,7 @@
                     acc[log.materia].assuntos.push({ assunto: log.assunto, date: log.fullDate });
                     
                     const assuntoRaw = log.assunto || 'Sem assunto definido';
-                    const sessionKey = log.id; 
+                    const sessionKey = log.id; // ISOLAMENTO POR SESSÃO E DATA NA TABELA!
 
                     if (!acc[log.materia].assuntosStats[sessionKey]) {
                         acc[log.materia].assuntosStats[sessionKey] = { 
@@ -429,13 +421,11 @@
                 };
             }, [studyLogs]);
 
-            // Opções de filtro de disciplinas
             const subjectsOptions = useMemo(() => {
                 const subs = new Set(studyLogs.map(l => l.materia).filter(Boolean));
                 return ['Todas as Matérias', ...Array.from(subs)];
             }, [studyLogs]);
 
-            // Dashboard Interativo de Questões (Cálculo)
             const filteredQuestionsData = useMemo(() => {
                 const now = new Date();
                 now.setHours(23, 59, 59, 999);
@@ -493,13 +483,6 @@
             }, [studyLogs]);
             const maxHours = Math.max(...last7DaysHours.map(d => d.hours), 0.5);
 
-            useEffect(() => {
-                let interval = null;
-                if (isTimerRunning) interval = setInterval(() => setTimerSeconds(s => s + 1), 1000);
-                else clearInterval(interval);
-                return () => clearInterval(interval);
-            }, [isTimerRunning]);
-
             const selectDayProfile = (profile) => {
                 const newProfiles = { ...dayProfiles, [currentDayNumber]: profile };
                 setDayProfiles(newProfiles);
@@ -510,27 +493,21 @@
                 const taskKey = `day-${currentDayNumber}-${task.id}`;
                 if (!completedTasks[taskKey]) {
                     setActiveTaskForLog({ ...task, key: taskKey });
-                    
-                    let h = '', m = '', s = '';
-                    if (timerSeconds > 0) {
-                        const timeObj = secondsToHMS(timerSeconds);
-                        h = timeObj.h; m = timeObj.m; s = timeObj.s;
-                    }
-
                     setLogForm({ 
-                        assunto: '', h, m, s, total: '', acertos: '', anotacoes: '', 
+                        assunto: '', h: '', m: '', s: '', 
+                        total: '', acertos: '', anotacoes: '', 
                         tipoEstudo: 'teoria', tipoTeoria: 'pdf', 
                         pdfPagina: '', videoAula: '', videoMinuto: '', videoSegundo: '', questaoParada: '' 
                     });
                     setShowLogModal(true);
                 } else {
+                    // DESMARCAR A TAREFA E APAGAR O LOG CORRESPONDENTE
                     const newTasks = { ...completedTasks };
                     delete newTasks[taskKey];
                     
                     const logToDelete = studyLogs.find(l => l.taskKey === taskKey && l.recordedDay === currentDayNumber);
                     if (logToDelete && window.fb) {
-                        const logRef = window.fb.doc(window.fb.db, 'artifacts', window.fb.appId, 'users', user.uid, 'studyLogs', logToDelete.id);
-                        window.fb.deleteDoc(logRef).catch(e => console.error(e));
+                        executeDelete(logToDelete.id);
                     }
                     
                     updateCloudState({ completedTasks: newTasks });
@@ -538,10 +515,7 @@
             };
 
             const submitLog = async () => {
-                if (!user || !window.fb) {
-                    alert("Atenção: Sistema não conectado ao Firebase.");
-                    return;
-                }
+                if (!user || !window.fb) return alert("Atenção: Sistema não conectado ao Firebase.");
                 if (isSubmitting) return;
                 setIsSubmitting(true);
 
@@ -589,9 +563,7 @@
                     setShowLogModal(false);
 
                 } catch (e) {
-                    console.error("Erro CRÍTICO ao guardar:", e);
-                    if (e.message.includes('permission') || e.code === 'permission-denied') setError("firestore/permission-denied");
-                    else alert("Falha na Sincronização: " + e.message);
+                    console.error("Erro ao guardar:", e);
                 } finally {
                     setIsSubmitting(false);
                 }
@@ -877,7 +849,7 @@
                                             </div>
 
                                             {/* LINHA 2: Matriz de Dias Contínuos (2 Colunas) + Dashboard de Questões (1 Coluna) */}
-                                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
                                                 {/* MATRIZ DE DIAS CONTÍNUOS (Expandida) */}
                                                 <div className="lg:col-span-2 space-y-6">
                                                     <div className="bg-white dark:bg-darkcard rounded-[2.5rem] p-8 shadow-md dark:shadow-xl border border-slate-200 dark:border-darkborder relative overflow-hidden transition-colors duration-500 h-full flex flex-col">
@@ -891,8 +863,7 @@
                                                                 <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 sm:gap-2 bg-slate-50 dark:bg-darkbg p-5 rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500 mx-auto w-full justify-start md:justify-center">
                                                                     {Array.from({length: Math.max(168, Math.ceil(currentDayNumber / 7) * 7)}).map((_, i) => {
                                                                         const dayNum = i + 1;
-                                                                        const dayInfo = metrics.daysData[dayNum];
-                                                                        const seconds = dayInfo ? dayInfo.totalSeconds : 0;
+                                                                        const seconds = metrics.intensityMap[dayNum] || 0;
                                                                         
                                                                         let colorClass = isDarkMode ? "bg-[#111] border-[#222]" : "bg-slate-200 border-slate-300"; 
                                                                         if (seconds > 0 && seconds < 3600) colorClass = isDarkMode ? "bg-[#00ff88]/20 border-[#00ff88]/30" : "bg-blue-300 border-blue-400"; 
@@ -1045,14 +1016,12 @@
                                             </div>
                                             <p className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-[0.4em] mb-12 transition-colors duration-500">Dia Atual do Ciclo</p>
                                             
-                                            {/* GITHUB STYLE CONTRIBUTION GRAPH COMPLETO */}
                                             <div className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto overflow-hidden">
                                                 <div className="w-full overflow-x-auto pb-4 git-scroll">
                                                     <div className="inline-grid grid-rows-7 grid-flow-col gap-2 p-5 bg-slate-50 dark:bg-darkbg rounded-2xl border border-slate-200 dark:border-darkborder shadow-inner min-w-max transition-colors duration-500">
                                                         {Array.from({length: Math.max(168, Math.ceil(currentDayNumber / 7) * 7 + 14)}).map((_, i) => {
                                                             const dayNum = i + 1;
-                                                            const dayInfo = metrics.daysData[dayNum];
-                                                            const seconds = dayInfo ? dayInfo.totalSeconds : 0;
+                                                            const seconds = metrics.intensityMap[dayNum] || 0;
                                                             
                                                             let colorClass = isDarkMode ? "bg-[#111] border-[#222]" : "bg-slate-200 border-slate-300"; 
                                                             if (seconds > 0 && seconds < 3600) colorClass = isDarkMode ? "bg-[#00ff88]/20 border-[#00ff88]/30" : "bg-blue-300 border-blue-400"; 
